@@ -4,11 +4,16 @@ Aplicativo web simples para controlar receitas e despesas pessoais. Não precisa
 
 ## Como usar
 
-Abra o arquivo `index.html` no navegador. Para acessar pelo celular, publique a pasta em qualquer hospedagem estática (por exemplo, GitHub Pages).
+Acesse pelo GitHub Pages: https://gabrielmartins13.github.io/GabrielMartins13/
+
+Ou abra o arquivo `index.html` direto no navegador.
 
 ## Funcionalidades
 
 - Cadastro, edição e exclusão de receitas e despesas, com categoria e data
+- Compras parceladas: o valor total é dividido em parcelas mensais
+- Lançamentos fixos (salário, aluguel…) lançados automaticamente todo mês
+- Gráfico de receitas × despesas dos últimos 6 meses
 - Navegação por mês, com resumo de receitas, despesas, saldo do mês e saldo acumulado
 - Gráfico de despesas por categoria
 - Orçamento mensal por categoria, com alerta ao atingir 80% e ao ultrapassar o limite

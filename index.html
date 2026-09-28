@@ -24,6 +24,22 @@
       <div class="card"><span>Saldo acumulado</span><strong id="overall">R$ 0,00</strong></div>
     </section>
 
+    <section class="panel wide">
+      <h2>Evolução dos últimos 6 meses</h2>
+      <div class="legend">
+        <span><i class="swatch s1"></i>Receitas</span>
+        <span><i class="swatch s2"></i>Despesas</span>
+      </div>
+      <div id="chart" class="chart"></div>
+      <details class="chart-table">
+        <summary>Ver como tabela</summary>
+        <table>
+          <thead><tr><th>Mês</th><th>Receitas</th><th>Despesas</th><th>Saldo</th></tr></thead>
+          <tbody id="chart-table"></tbody>
+        </table>
+      </details>
+    </section>
+
     <section class="panel">
       <h2 id="form-title">Nova transação</h2>
       <form id="tx-form">
@@ -36,6 +52,13 @@
         <label>Valor (R$)<input id="amount" type="number" step="0.01" min="0.01" required placeholder="0,00"></label>
         <label>Categoria<select id="category"></select></label>
         <label>Data<input id="date" type="date" required></label>
+        <label id="repeat-wrap">Repetição<select id="repeat">
+          <option value="none">Não repetir</option>
+          <option value="installments">Parcelado</option>
+          <option value="monthly">Todo mês (lançamento fixo)</option>
+        </select></label>
+        <label id="installments-wrap" hidden>Número de parcelas<input id="installments" type="number" min="2" max="60" value="2"></label>
+        <p id="repeat-hint" class="hint" hidden></p>
         <div class="form-actions">
           <button type="submit" class="primary" id="submit-btn">Adicionar</button>
           <button type="button" id="cancel-edit" hidden>Cancelar</button>
@@ -52,6 +75,12 @@
       <h2>Orçamentos mensais</h2>
       <p class="hint">Defina um limite de gasto por categoria. Deixe vazio para não usar.</p>
       <div id="budgets"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Lançamentos fixos</h2>
+      <p class="hint">Lançados automaticamente todo mês. Encerrar mantém os meses já lançados.</p>
+      <ul id="recurring-list" class="simple-list"></ul>
     </section>
 
     <section class="panel wide">
