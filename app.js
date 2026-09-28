@@ -20,7 +20,7 @@ const ACCENTS = [
   { name: 'Laranja', value: '#c4581b' },
   { name: 'Grafite', value: '#475569' },
 ];
-const DEFAULT_SETTINGS = { name: '', accent: '', theme: 'auto', nav: 'top', fontSize: 'normal', period: 6 };
+const DEFAULT_SETTINGS = { name: '', accent: '', theme: 'auto', nav: 'bottom', fontSize: 'normal', period: 6, version: 2 };
 
 const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const $ = (id) => document.getElementById(id);
@@ -44,7 +44,10 @@ function normalize(data) {
 }
 
 let state = normalize(readJSON(STORAGE_KEY) || {});
-let settings = { ...DEFAULT_SETTINGS, ...(readJSON(SETTINGS_KEY) || {}) };
+const storedSettings = readJSON(SETTINGS_KEY) || {};
+// Até a versão 2 a barra ficava no topo por padrão; quem não escolheu passa a ter a barra embaixo
+if (storedSettings.version !== 2) delete storedSettings.nav;
+let settings = { ...DEFAULT_SETTINGS, ...storedSettings, version: 2 };
 
 function save() {
   if (!writeJSON(STORAGE_KEY, state)) notify('Não foi possível salvar os dados neste navegador.');
@@ -237,7 +240,7 @@ const axisMoney = (v) => `${v < 0 ? '−' : ''}R$ ${compact.format(Math.abs(v))}
 
 // Escala com passos "redondos" (1, 2, 2,5 ou 5 × 10^n) que sempre inclui o zero
 function niceScale(values, ticks = 4) {
-  const lo = Math.min(0, ...values), hi = Math.max(0, ...values);
+  const lo = Math.min(0, ...values), hi = Math.max(0, ...values) || (lo < 0 ? 0 : 1000);
   const raw = (hi - lo || 1) / ticks;
   const p = 10 ** Math.floor(Math.log10(raw));
   const step = [1, 2, 2.5, 5, 10].map((k) => k * p).find((v) => v >= raw);

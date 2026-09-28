@@ -116,11 +116,20 @@ body.nav-bottom .tabbar {
   justify-content: space-around; padding: 0 8px env(safe-area-inset-bottom, 0px);
   border-bottom: 0;
 }
+.tabbar svg .fill { fill: currentColor; stroke: none; }
 body.nav-bottom .tabbar a {
-  flex: 1; max-width: 140px; flex-direction: column; gap: 2px; padding: 8px 4px 10px;
-  font-size: .75rem; border-bottom: 0; margin-bottom: 0; border-top: 2px solid transparent; margin-top: -1px;
+  flex: 1; max-width: 140px; flex-direction: column; gap: 4px; padding: 8px 4px 10px;
+  font-size: .75rem; border-bottom: 0; margin-bottom: 0;
 }
-body.nav-bottom .tabbar a[aria-current="page"] { border-top-color: var(--accent); }
+/* Ícone da aba ativa dentro de uma "pílula", como em apps de celular */
+body.nav-bottom .tabbar svg {
+  width: 24px; height: 24px; padding: 4px 18px; box-sizing: content-box; border-radius: 16px;
+}
+body.nav-bottom .tabbar a[aria-current="page"] { font-weight: 700; }
+body.nav-bottom .tabbar a[aria-current="page"] svg { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+@media (prefers-reduced-motion: no-preference) {
+  body.nav-bottom .tabbar svg { transition: background-color .2s ease; }
+}
 body.nav-bottom main { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
 
 /* Páginas */
