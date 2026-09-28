@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Controle Financeiro</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Controle Financeiro</h1>
+    <div class="month-nav">
+      <button id="prev-month" aria-label="Mês anterior">‹</button>
+      <input type="month" id="month" aria-label="Mês">
+      <button id="next-month" aria-label="Próximo mês">›</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="cards">
+      <div class="card"><span>Receitas</span><strong id="total-income" class="pos">R$ 0,00</strong></div>
+      <div class="card"><span>Despesas</span><strong id="total-expense" class="neg">R$ 0,00</strong></div>
+      <div class="card"><span>Saldo do mês</span><strong id="balance">R$ 0,00</strong></div>
+      <div class="card"><span>Saldo acumulado</span><strong id="overall">R$ 0,00</strong></div>
+    </section>
+
+    <section class="panel">
+      <h2 id="form-title">Nova transação</h2>
+      <form id="tx-form">
+        <input type="hidden" id="tx-id">
+        <div class="type-toggle" role="radiogroup" aria-label="Tipo">
+          <label><input type="radio" name="type" value="expense" checked> Despesa</label>
+          <label><input type="radio" name="type" value="income"> Receita</label>
+        </div>
+        <label>Descrição<input id="desc" required maxlength="80" placeholder="Ex.: Mercado"></label>
+        <label>Valor (R$)<input id="amount" type="number" step="0.01" min="0.01" required placeholder="0,00"></label>
+        <label>Categoria<select id="category"></select></label>
+        <label>Data<input id="date" type="date" required></label>
+        <div class="form-actions">
+          <button type="submit" class="primary" id="submit-btn">Adicionar</button>
+          <button type="button" id="cancel-edit" hidden>Cancelar</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel">
+      <h2>Despesas por categoria</h2>
+      <div id="by-category"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Orçamentos mensais</h2>
+      <p class="hint">Defina um limite de gasto por categoria. Deixe vazio para não usar.</p>
+      <div id="budgets"></div>
+    </section>
+
+    <section class="panel wide">
+      <div class="list-head">
+        <h2>Transações</h2>
+        <div class="filters">
+          <input id="search" type="search" placeholder="Buscar…" aria-label="Buscar">
+          <select id="filter-type" aria-label="Filtrar tipo">
+            <option value="">Todas</option>
+            <option value="income">Receitas</option>
+            <option value="expense">Despesas</option>
+          </select>
+        </div>
+      </div>
+      <ul id="tx-list"></ul>
+      <p id="empty" class="hint">Nenhuma transação neste mês.</p>
+    </section>
+
+    <section class="panel wide tools">
+      <button id="export">Exportar CSV</button>
+      <button id="backup">Baixar backup (JSON)</button>
+      <label class="file-btn">Restaurar backup<input type="file" id="restore" accept="application/json" hidden></label>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
