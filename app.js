@@ -20,7 +20,7 @@ const ACCENTS = [
   { name: 'Laranja', value: '#c4581b' },
   { name: 'Grafite', value: '#475569' },
 ];
-const DEFAULT_SETTINGS = { name: '', accent: '', theme: 'auto', nav: 'top', fontSize: 'normal' };
+const DEFAULT_SETTINGS = { name: '', accent: '', theme: 'auto', nav: 'top', fontSize: 'normal', period: 6 };
 
 const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const $ = (id) => document.getElementById(id);
@@ -196,88 +196,270 @@ function txItem(t, withActions) {
   </li>`;
 }
 
-function renderSummary(list) {
-  const income = sum(list, 'income');
-  const expense = sum(list, 'expense');
-  const upToMonth = state.transactions.filter((t) => t.date <= `${currentMonth()}-31`);
-  setMoney($('total-income'), income);
-  setMoney($('total-expense'), expense);
-  setMoney($('balance'), income - expense, true);
-  setMoney($('overall'), sum(upToMonth, 'income') - sum(upToMonth, 'expense'), true);
+// Variação percentual com seta; "goodWhenUp" define se subir é bom (verde) ou ruim (vermelho)
+function deltaHtml(cur, prev, goodWhenUp, prevYm) {
+  if (!prev) return cur ? 'sem dados do mês anterior' : '';
+  const pct = Math.round(((cur - prev) / prev) * 100);
+  if (pct === 0) return `igual a ${formatMonth(prevYm, false)}`;
+  const up = pct > 0;
+  const cls = up === goodWhenUp ? 'pos' : 'neg';
+  return `<span class="${cls}">${up ? '▲' : '▼'} ${Math.abs(pct)}%</span> vs ${formatMonth(prevYm, false)}`;
 }
 
-function renderChart() {
-  const chart = $('chart');
-  const months = Array.from({ length: 6 }, (_, i) => addMonths(currentMonth(), i - 5));
-  const data = months.map((ym) => {
-    const list = monthTransactions(ym);
-    return { ym, income: sum(list, 'income'), expense: sum(list, 'expense') };
-  });
+const balanceUpTo = (ym) => {
+  const list = state.transactions.filter((t) => t.date <= `${ym}-31`);
+  return sum(list, 'income') - sum(list, 'expense');
+};
 
-  $('chart-table').innerHTML = data.map((d) =>
-    `<tr><td>${formatMonth(d.ym)}</td><td>${brl.format(d.income)}</td><td>${brl.format(d.expense)}</td><td>${brl.format(d.income - d.expense)}</td></tr>`).join('');
+function renderSummary(list) {
+  const ym = currentMonth();
+  const prevYm = addMonths(ym, -1);
+  const prev = monthTransactions(prevYm);
+  const income = sum(list, 'income');
+  const expense = sum(list, 'expense');
+  const balance = income - expense;
+  setMoney($('total-income'), income);
+  setMoney($('total-expense'), expense);
+  setMoney($('balance'), balance, true);
+  setMoney($('overall'), balanceUpTo(ym), true);
+  $('income-delta').innerHTML = deltaHtml(income, sum(prev, 'income'), true, prevYm);
+  $('expense-delta').innerHTML = deltaHtml(expense, sum(prev, 'expense'), false, prevYm);
+  $('balance-note').textContent = income > 0
+    ? (balance >= 0 ? `${Math.round((balance / income) * 100)}% da receita guardada` : 'gastou mais do que recebeu')
+    : '';
+  $('overall-note').textContent = list.length ? `${balance >= 0 ? '+' : '−'} ${brl.format(Math.abs(balance))} neste mês` : '';
+}
 
-  // Página oculta: desenha quando ela for exibida
-  if (!chart.clientWidth) return;
+// ---------- Gráficos ----------
 
-  // Desenha no tamanho real do container para o texto não escalar
-  const W = Math.max(260, chart.clientWidth), H = 220, padL = 56, padB = 24, padT = 8;
-  const plotW = W - padL, plotH = H - padB - padT;
-  const rawMax = Math.max(...data.map((d) => Math.max(d.income, d.expense)));
-  // Escala "redonda" para as linhas de grade: 1, 2 ou 5 × 10^n
-  const step = rawMax > 0 ? (() => {
-    const s = rawMax / 4, p = 10 ** Math.floor(Math.log10(s));
-    return [1, 2, 5, 10].map((k) => k * p).find((v) => v >= s);
-  })() : 250;
-  const max = step * Math.ceil((rawMax || 1) / step);
-  const y = (v) => padT + plotH - (v / max) * plotH;
-  const compact = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 });
+const compact = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 });
+const axisMoney = (v) => `${v < 0 ? '−' : ''}R$ ${compact.format(Math.abs(v))}`;
+
+// Escala com passos "redondos" (1, 2, 2,5 ou 5 × 10^n) que sempre inclui o zero
+function niceScale(values, ticks = 4) {
+  const lo = Math.min(0, ...values), hi = Math.max(0, ...values);
+  const raw = (hi - lo || 1) / ticks;
+  const p = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map((k) => k * p).find((v) => v >= raw);
+  return { min: Math.floor(lo / step) * step, max: Math.max(step, Math.ceil(hi / step) * step), step };
+}
+
+// Estrutura comum: grade, eixo Y, rótulos do eixo X e camada de hover com tooltip.
+// Desenha no tamanho real do container para o texto não escalar; container oculto é ignorado.
+function drawChart(el, { n, values, xLabel, showTick = () => true, body, tooltip, lines = false, height = 200, label }) {
+  const W = el.clientWidth;
+  if (!W) return;
+  const H = height, padL = 60, padR = 10, padT = 10, padB = 24;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const scale = niceScale(values);
+  const y = (v) => padT + plotH - ((v - scale.min) / (scale.max - scale.min)) * plotH;
+  const band = plotW / n;
+  const x = (i) => padL + band * i + band / 2;
 
   let svg = '';
-  for (let v = 0; v <= max + 1e-9; v += step) {
-    svg += `<line class="${v === 0 ? 'baseline' : 'grid'}" x1="${padL}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/>`;
-    svg += `<text x="${padL - 8}" y="${y(v) + 4}" text-anchor="end">R$ ${compact.format(v)}</text>`;
+  for (let v = scale.min; v <= scale.max + scale.step / 2; v += scale.step) {
+    svg += `<line class="${Math.abs(v) < scale.step / 2 ? 'baseline' : 'grid'}" x1="${padL}" x2="${W - padR}" y1="${y(v)}" y2="${y(v)}"/>`;
+    svg += `<text x="${padL - 8}" y="${y(v) + 4}" text-anchor="end">${axisMoney(v)}</text>`;
   }
-  const groupW = plotW / data.length;
-  const barW = Math.min(28, groupW * 0.3), gap = 2;
-  // Barra com cantos superiores arredondados, apoiada na linha de base
-  const bar = (x, v, cls) => {
-    if (v <= 0) return '';
-    const top = y(v), h = padT + plotH - top, r = Math.min(4, h, barW / 2);
-    return `<path class="${cls}" d="M${x},${top + h}V${top + r}Q${x},${top} ${x + r},${top}H${x + barW - r}Q${x + barW},${top} ${x + barW},${top + r}V${top + h}Z"/>`;
-  };
-  data.forEach((d, i) => {
-    const cx = padL + groupW * i + groupW / 2;
-    svg += `<rect class="hit" data-i="${i}" x="${padL + groupW * i}" y="${padT}" width="${groupW}" height="${plotH}" rx="6"/>`;
-    svg += bar(cx - barW - gap / 2, d.income, 's1');
-    svg += bar(cx + gap / 2, d.expense, 's2');
-    svg += `<text x="${cx}" y="${H - 6}" text-anchor="middle">${formatMonth(d.ym, false)}</text>`;
-  });
+  for (let i = 0; i < n; i++) {
+    if (showTick(i, band)) svg += `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${xLabel(i)}</text>`;
+  }
+  svg += body({ x, y, band });
+  if (lines) svg += `<line class="crosshair" y1="${padT}" y2="${padT + plotH}"/>`;
+  for (let i = 0; i < n; i++) {
+    svg += `<rect class="hit" data-i="${i}" x="${padL + band * i}" y="${padT}" width="${band}" height="${plotH}" rx="6"/>`;
+  }
+  el.innerHTML = `<svg class="${lines ? 'lines' : ''}" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${label}">${svg}</svg><div class="tooltip" hidden></div>`;
 
-  chart.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Receitas e despesas dos últimos 6 meses">${svg}</svg><div class="tooltip" hidden></div>`;
-  chart.querySelectorAll('path').forEach((p) => { p.style.pointerEvents = 'none'; });
-
-  const tip = chart.querySelector('.tooltip');
-  const clear = () => chart.querySelectorAll('.hit.active').forEach((el) => el.classList.remove('active'));
+  const tip = el.querySelector('.tooltip');
+  const cross = el.querySelector('.crosshair');
+  const clear = () => el.querySelectorAll('.hit.active').forEach((r) => r.classList.remove('active'));
   const show = (rect) => {
-    const d = data[rect.dataset.i];
+    const i = Number(rect.dataset.i);
     clear();
     rect.classList.add('active');
-    tip.innerHTML = `<b>${formatMonth(d.ym)}</b>
-      <div><i class="swatch s1"></i>Receitas ${brl.format(d.income)}</div>
-      <div><i class="swatch s2"></i>Despesas ${brl.format(d.expense)}</div>
-      <div>Saldo ${brl.format(d.income - d.expense)}</div>`;
+    if (cross) {
+      cross.setAttribute('x1', x(i));
+      cross.setAttribute('x2', x(i));
+      cross.classList.add('on');
+    }
+    tip.innerHTML = tooltip(i);
     tip.hidden = false;
-    const box = rect.getBoundingClientRect(), host = chart.getBoundingClientRect();
-    const left = box.left - host.left + box.width / 2 - tip.offsetWidth / 2;
-    tip.style.left = `${Math.max(0, Math.min(left, host.width - tip.offsetWidth))}px`;
+    const left = x(i) - tip.offsetWidth / 2;
+    tip.style.left = `${Math.max(0, Math.min(left, W - tip.offsetWidth))}px`;
     tip.style.top = '0px';
   };
-  chart.querySelectorAll('.hit').forEach((rect) => {
+  el.querySelectorAll('.hit').forEach((rect) => {
     rect.addEventListener('mouseenter', () => show(rect));
     rect.addEventListener('click', () => show(rect));
   });
-  chart.querySelector('svg').addEventListener('mouseleave', () => { tip.hidden = true; clear(); });
+  el.querySelector('svg').addEventListener('mouseleave', () => {
+    tip.hidden = true;
+    clear();
+    cross?.classList.remove('on');
+  });
+}
+
+function linePath(values, x, y) {
+  let d = '';
+  values.forEach((v, i) => {
+    if (v == null) return;
+    d += `${d ? 'L' : 'M'}${x(i)},${y(v)}`;
+  });
+  return d;
+}
+
+const lastIndex = (values) => values.reduce((last, v, i) => (v == null ? last : i), -1);
+const dot = (cx, cy, cls) => `<circle class="dot ${cls}" cx="${cx}" cy="${cy}" r="4.5"/>`;
+// Rótulos do eixo X sem encavalar quando há muitos meses em pouco espaço
+const everyOther = (n) => (i, band) => band >= 40 || (n - 1 - i) % 2 === 0;
+
+function periodMonths() {
+  const n = Number(settings.period) === 12 ? 12 : 6;
+  return Array.from({ length: n }, (_, i) => addMonths(currentMonth(), i - (n - 1)));
+}
+
+function renderEvolution() {
+  const months = periodMonths();
+  const data = months.map((ym) => {
+    const list = monthTransactions(ym);
+    return { ym, income: sum(list, 'income'), expense: sum(list, 'expense'), total: balanceUpTo(ym) };
+  });
+
+  $('chart-table').innerHTML = data.map((d) => `<tr><td>${formatMonth(d.ym)}</td><td>${brl.format(d.income)}</td>
+    <td>${brl.format(d.expense)}</td><td>${brl.format(d.income - d.expense)}</td><td>${brl.format(d.total)}</td></tr>`).join('');
+
+  drawChart($('chart'), {
+    n: data.length,
+    values: data.flatMap((d) => [d.income, d.expense]),
+    xLabel: (i) => formatMonth(data[i].ym, data.length > 6 && data[i].ym.endsWith('-01')),
+    showTick: everyOther(data.length),
+    label: `Receitas e despesas dos últimos ${data.length} meses`,
+    body: ({ x, y, band }) => {
+      const barW = Math.min(28, band * 0.32), gap = 2;
+      // Barra com cantos superiores arredondados, apoiada na linha de base
+      const bar = (bx, v, cls) => {
+        if (v <= 0) return '';
+        const top = y(v), h = y(0) - top, r = Math.min(4, h, barW / 2);
+        return `<path class="${cls}" d="M${bx},${top + h}V${top + r}Q${bx},${top} ${bx + r},${top}H${bx + barW - r}Q${bx + barW},${top} ${bx + barW},${top + r}V${top + h}Z"/>`;
+      };
+      return data.map((d, i) => bar(x(i) - barW - gap / 2, d.income, 's1') + bar(x(i) + gap / 2, d.expense, 's2')).join('');
+    },
+    tooltip: (i) => {
+      const d = data[i];
+      return `<b>${formatMonth(d.ym)}</b>
+        <div><i class="swatch s1"></i>Receitas ${brl.format(d.income)}</div>
+        <div><i class="swatch s2"></i>Despesas ${brl.format(d.expense)}</div>
+        <div>Saldo ${brl.format(d.income - d.expense)}</div>`;
+    },
+  });
+
+  // Saldo acumulado ao fim de cada mês
+  const totals = data.map((d) => d.total);
+  const first = totals[0], last = totals[totals.length - 1];
+  const diff = last - first;
+  $('balance-summary').textContent = state.transactions.length
+    ? `${diff >= 0 ? 'Cresceu' : 'Caiu'} ${brl.format(Math.abs(diff))} desde ${formatMonth(data[0].ym)}.`
+    : 'Adicione receitas e despesas para ver a evolução.';
+  drawChart($('balance-chart'), {
+    n: data.length,
+    values: totals,
+    lines: true,
+    xLabel: (i) => formatMonth(data[i].ym, false),
+    showTick: everyOther(data.length),
+    label: 'Evolução do saldo acumulado',
+    body: ({ x, y }) => {
+      const d = linePath(totals, x, y);
+      const area = `${d}L${x(totals.length - 1)},${y(0)}L${x(0)},${y(0)}Z`;
+      const li = totals.length - 1;
+      return `<path class="area" d="${area}"/><path class="line s1" d="${d}"/>${dot(x(li), y(totals[li]), 's1')}`;
+    },
+    tooltip: (i) => `<b>Fim de ${formatMonth(data[i].ym)}</b><div>Saldo acumulado ${brl.format(totals[i])}</div>`,
+  });
+}
+
+// Gasto acumulado dia a dia no mês selecionado, comparado ao mês anterior
+function renderPace() {
+  const ym = currentMonth();
+  const prevYm = addMonths(ym, -1);
+  const daysIn = (m) => { const [yy, mm] = m.split('-').map(Number); return new Date(yy, mm, 0).getDate(); };
+  const cumulative = (m, len) => {
+    const perDay = new Array(len).fill(0);
+    for (const t of monthTransactions(m)) if (t.type === 'expense') perDay[Number(t.date.slice(8, 10)) - 1] += t.amount;
+    let acc = 0;
+    return perDay.map((v) => (acc += v));
+  };
+  const n = Math.max(daysIn(ym), daysIn(prevYm));
+  const now = today();
+  // No mês atual a linha para no dia de hoje; meses futuros ficam sem linha
+  const lastDay = ym === now.slice(0, 7) ? Number(now.slice(8, 10)) : ym < now.slice(0, 7) ? daysIn(ym) : 0;
+  const cur = cumulative(ym, daysIn(ym)).map((v, i) => (i < lastDay ? v : null));
+  const prev = cumulative(prevYm, daysIn(prevYm));
+  while (cur.length < n) cur.push(null);
+  while (prev.length < n) prev.push(null);
+
+  const li = lastIndex(cur);
+  const summary = $('pace-summary');
+  if (li < 0) {
+    summary.textContent = 'Este mês ainda não começou.';
+  } else {
+    const spent = cur[li];
+    const before = prev[Math.min(li, lastIndex(prev))] ?? 0;
+    const day = li + 1;
+    if (!before) summary.textContent = `Até o dia ${day}: ${brl.format(spent)} em despesas.`;
+    else {
+      const pct = Math.round(((spent - before) / before) * 100);
+      summary.innerHTML = `Até o dia ${day}: ${brl.format(spent)}, <span class="${pct > 0 ? 'neg' : 'pos'}">${Math.abs(pct)}% ${pct > 0 ? 'a mais' : 'a menos'}</span> que no mesmo período de ${formatMonth(prevYm, false)}.`;
+    }
+  }
+
+  drawChart($('pace-chart'), {
+    n,
+    values: [...cur, ...prev].filter((v) => v != null),
+    lines: true,
+    xLabel: (i) => String(i + 1),
+    showTick: (i) => i === 0 || (i + 1) % 5 === 0,
+    label: 'Gasto acumulado por dia neste mês e no anterior',
+    body: ({ x, y }) => `<path class="line prev" d="${linePath(prev, x, y)}"/><path class="line s2" d="${linePath(cur, x, y)}"/>${li >= 0 ? dot(x(li), y(cur[li]), 's2') : ''}`,
+    tooltip: (i) => `<b>Dia ${i + 1}</b>
+      ${cur[i] != null ? `<div><i class="swatch s2"></i>Este mês ${brl.format(cur[i])}</div>` : ''}
+      ${prev[i] != null ? `<div>Mês anterior ${brl.format(prev[i])}</div>` : ''}`,
+  });
+}
+
+// Minigráfico de 6 meses por categoria de despesa
+function renderTrends() {
+  const months = Array.from({ length: 6 }, (_, i) => addMonths(currentMonth(), i - 5));
+  const rows = CATEGORIES.expense.map((c) => ({
+    c,
+    values: months.map((ym) => monthTransactions(ym).filter((t) => t.type === 'expense' && t.category === c).reduce((a, t) => a + t.amount, 0)),
+  })).filter((r) => r.values.some((v) => v > 0))
+    .sort((a, b) => b.values[5] - a.values[5] || b.values[4] - a.values[4]);
+
+  $('trends').innerHTML = rows.length ? rows.map(({ c, values }) => {
+    const max = Math.max(...values) || 1;
+    const px = (i) => 4 + (i * 88) / 5;
+    const py = (v) => 24 - (v / max) * 20;
+    const pts = values.map((v, i) => `${px(i)},${py(v)}`).join(' ');
+    const [prev, cur] = values.slice(-2);
+    let delta = '—';
+    if (prev > 0) {
+      const pct = Math.round(((cur - prev) / prev) * 100);
+      delta = pct === 0 ? '=' : `<span class="trend-delta ${pct > 0 ? 'neg' : 'pos'}">${pct > 0 ? '▲' : '▼'} ${Math.abs(pct)}%</span>`;
+    } else if (cur > 0) delta = 'novo';
+    const title = months.map((ym, i) => `${formatMonth(ym)}: ${brl.format(values[i])}`).join('\n');
+    return `<li title="${title}">
+      <span class="trend-name">${escapeHtml(c)}</span>
+      <svg viewBox="0 0 96 28" preserveAspectRatio="none" aria-hidden="true"><polyline class="spark" points="${pts}"/><circle class="spark-dot" cx="${px(5)}" cy="${py(values[5])}" r="3"/></svg>
+      <span class="trend-value">${brl.format(cur)}</span>
+      <span class="trend-delta">${delta}</span>
+    </li>`;
+  }).join('') : '<li class="hint">Sem despesas nos últimos 6 meses.</li>';
+}
+
+function renderCharts() {
+  renderEvolution();
+  renderPace();
 }
 
 // Calendário do mês com a intensidade de gasto por dia (4 níveis, relativo ao dia de maior gasto)
@@ -384,7 +566,8 @@ function render() {
   document.querySelectorAll('.month-label').forEach((el) => { el.textContent = label; });
 
   renderSummary(list);
-  renderChart();
+  renderCharts();
+  renderTrends();
   renderHeatmap(list);
   renderShares($('home-categories'), totalsByCategory(list, 'expense'), 'Sem despesas neste mês.');
   renderBudgetsHome(list);
@@ -583,7 +766,7 @@ function showTab(tab = tabFromHash()) {
     else a.removeAttribute('aria-current');
   });
   $('month-nav').hidden = tab === 'personalizar';
-  if (tab === 'inicio') renderChart();
+  if (tab === 'inicio') renderCharts();
   if (changed) window.scrollTo(0, 0);
 }
 
@@ -621,15 +804,15 @@ function applySettings() {
   const name = settings.name.trim() || DEFAULT_NAME;
   $('app-name').textContent = name;
   document.title = name;
-  if (activeTab === 'inicio') renderChart();
+  if (activeTab === 'inicio') renderCharts();
 }
 
 function syncSettingsForm() {
   $('set-name').value = settings.name;
   $('set-color').value = settings.accent || '#2f6fde';
   document.querySelectorAll('input[name="accent"]').forEach((r) => { r.checked = r.value === settings.accent; });
-  for (const key of ['theme', 'nav', 'fontSize']) {
-    document.querySelectorAll(`input[name="${key}"]`).forEach((r) => { r.checked = r.value === settings[key]; });
+  for (const key of ['theme', 'nav', 'fontSize', 'period']) {
+    document.querySelectorAll(`input[name="${key}"]`).forEach((r) => { r.checked = r.value === String(settings[key]); });
   }
 }
 
@@ -650,8 +833,14 @@ function buildSettings() {
     if (t.id === 'set-color') syncSettingsForm();
   });
 
+  document.querySelectorAll('input[name="period"]').forEach((r) => r.addEventListener('change', () => {
+    settings.period = Number(r.value);
+    writeJSON(SETTINGS_KEY, settings);
+    renderCharts();
+  }));
+
   $('reset-settings').addEventListener('click', () => {
-    settings = { ...DEFAULT_SETTINGS };
+    settings = { ...DEFAULT_SETTINGS, period: settings.period };
     writeJSON(SETTINGS_KEY, settings);
     applySettings();
     syncSettingsForm();
@@ -762,7 +951,7 @@ window.addEventListener('hashchange', () => showTab());
 let resizeTimer;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(renderChart, 150);
+  resizeTimer = setTimeout(renderCharts, 150);
 });
 
 // ---------- Início ----------

@@ -41,15 +41,21 @@
       <h2 class="page-title" id="t-inicio">Visão geral · <span class="month-label"></span></h2>
 
       <div class="cards">
-        <div class="card"><span>Receitas</span><strong id="total-income" class="pos">R$ 0,00</strong></div>
-        <div class="card"><span>Despesas</span><strong id="total-expense" class="neg">R$ 0,00</strong></div>
-        <div class="card"><span>Saldo do mês</span><strong id="balance">R$ 0,00</strong></div>
-        <div class="card"><span>Saldo acumulado</span><strong id="overall">R$ 0,00</strong></div>
+        <div class="card"><span>Receitas</span><strong id="total-income" class="pos">R$ 0,00</strong><small id="income-delta" class="delta"></small></div>
+        <div class="card"><span>Despesas</span><strong id="total-expense" class="neg">R$ 0,00</strong><small id="expense-delta" class="delta"></small></div>
+        <div class="card"><span>Saldo do mês</span><strong id="balance">R$ 0,00</strong><small id="balance-note" class="delta"></small></div>
+        <div class="card"><span>Saldo acumulado</span><strong id="overall">R$ 0,00</strong><small id="overall-note" class="delta"></small></div>
       </div>
 
       <div class="grid-2">
         <section class="panel wide">
-          <h3>Evolução dos últimos 6 meses</h3>
+          <div class="panel-head">
+            <h3>Receitas × despesas</h3>
+            <div class="segmented small" role="radiogroup" aria-label="Período dos gráficos">
+              <label><input type="radio" name="period" value="6"><span>6 meses</span></label>
+              <label><input type="radio" name="period" value="12"><span>12 meses</span></label>
+            </div>
+          </div>
           <div class="legend">
             <span><i class="swatch s1"></i>Receitas</span>
             <span><i class="swatch s2"></i>Despesas</span>
@@ -59,7 +65,7 @@
             <summary>Ver como tabela</summary>
             <div class="table-scroll">
               <table>
-                <thead><tr><th>Mês</th><th>Receitas</th><th>Despesas</th><th>Saldo</th></tr></thead>
+                <thead><tr><th>Mês</th><th>Receitas</th><th>Despesas</th><th>Saldo do mês</th><th>Acumulado</th></tr></thead>
                 <tbody id="chart-table"></tbody>
               </table>
             </div>
@@ -67,7 +73,29 @@
         </section>
 
         <section class="panel">
-          <h3>Mapa de gastos do mês</h3>
+          <h3>Evolução do saldo acumulado</h3>
+          <p class="hint" id="balance-summary"></p>
+          <div id="balance-chart" class="chart"></div>
+        </section>
+
+        <section class="panel">
+          <h3>Ritmo de gastos do mês</h3>
+          <p class="hint" id="pace-summary"></p>
+          <div class="legend">
+            <span><i class="line-key s2"></i>Este mês</span>
+            <span><i class="line-key prev"></i>Mês anterior</span>
+          </div>
+          <div id="pace-chart" class="chart"></div>
+        </section>
+
+        <section class="panel">
+          <h3>Tendência por categoria</h3>
+          <p class="hint">Despesas dos últimos 6 meses e variação sobre o mês anterior.</p>
+          <ul id="trends" class="trends"></ul>
+        </section>
+
+        <section class="panel">
+          <h3>Gastos por dia</h3>
           <div id="heatmap" class="heatmap"></div>
           <div class="heat-foot">
             <p id="heat-detail" class="hint" aria-live="polite"></p>
@@ -85,7 +113,7 @@
           <div id="home-budgets"></div>
         </section>
 
-        <section class="panel">
+        <section class="panel wide">
           <h3>Últimas transações</h3>
           <ul id="home-recent" class="tx-list"></ul>
         </section>
