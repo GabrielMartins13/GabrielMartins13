@@ -8,18 +8,12 @@ Acesse pelo GitHub Pages: https://gabrielmartins13.github.io/GabrielMartins13/
 
 Ou abra o arquivo `index.html` direto no navegador.
 
-## Funcionalidades
+## Páginas
 
-- Cadastro, edição e exclusão de receitas e despesas, com categoria e data
-- Compras parceladas: o valor total é dividido em parcelas mensais
-- Lançamentos fixos (salário, aluguel…) lançados automaticamente todo mês
-- Gráfico de receitas × despesas dos últimos 6 meses
-- Navegação por mês, com resumo de receitas, despesas, saldo do mês e saldo acumulado
-- Gráfico de despesas por categoria
-- Orçamento mensal por categoria, com alerta ao atingir 80% e ao ultrapassar o limite
-- Busca e filtro de transações
-- Exportação para CSV (abre no Excel) e backup/restauração em JSON
-- Tema claro e escuro automático, layout adaptado para celular
+- **Início**: painel com receitas, despesas, saldo do mês e acumulado, gráfico dos últimos 6 meses, mapa de gastos por dia do mês, despesas por categoria, orçamentos e últimas transações
+- **Despesas**: cadastro (avulsa, parcelada ou fixa mensal), lista com busca, gastos por categoria e orçamentos mensais com alerta em 80% e acima do limite
+- **Receitas**: cadastro (avulsa ou fixa mensal), lista com busca e receitas por origem
+- **Personalizar**: nome no topo, cor principal, tema claro/escuro/automático, barra de navegação no topo ou embaixo, tamanho do texto, exportação CSV, backup e restauração
 
 ## Estrutura
 

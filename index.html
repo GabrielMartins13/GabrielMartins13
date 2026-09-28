@@ -2,107 +2,222 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Controle Financeiro</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="topbar">
-    <h1>Controle Financeiro</h1>
-    <div class="month-nav">
+    <h1 id="app-name">Controle Financeiro</h1>
+    <div class="month-nav" id="month-nav">
       <button id="prev-month" aria-label="Mês anterior">‹</button>
       <input type="month" id="month" aria-label="Mês">
       <button id="next-month" aria-label="Próximo mês">›</button>
     </div>
   </header>
 
+  <nav class="tabbar" id="tabbar" aria-label="Páginas">
+    <a href="#inicio" data-tab="inicio">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>
+      <span>Início</span>
+    </a>
+    <a href="#despesas" data-tab="despesas">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg>
+      <span>Despesas</span>
+    </a>
+    <a href="#receitas" data-tab="receitas">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+      <span>Receitas</span>
+    </a>
+    <a href="#personalizar" data-tab="personalizar">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg>
+      <span>Personalizar</span>
+    </a>
+  </nav>
+
   <main>
-    <section class="cards">
-      <div class="card"><span>Receitas</span><strong id="total-income" class="pos">R$ 0,00</strong></div>
-      <div class="card"><span>Despesas</span><strong id="total-expense" class="neg">R$ 0,00</strong></div>
-      <div class="card"><span>Saldo do mês</span><strong id="balance">R$ 0,00</strong></div>
-      <div class="card"><span>Saldo acumulado</span><strong id="overall">R$ 0,00</strong></div>
-    </section>
+    <!-- Início -->
+    <section class="page" id="page-inicio" aria-labelledby="t-inicio">
+      <h2 class="page-title" id="t-inicio">Visão geral · <span class="month-label"></span></h2>
 
-    <section class="panel wide">
-      <h2>Evolução dos últimos 6 meses</h2>
-      <div class="legend">
-        <span><i class="swatch s1"></i>Receitas</span>
-        <span><i class="swatch s2"></i>Despesas</span>
+      <div class="cards">
+        <div class="card"><span>Receitas</span><strong id="total-income" class="pos">R$ 0,00</strong></div>
+        <div class="card"><span>Despesas</span><strong id="total-expense" class="neg">R$ 0,00</strong></div>
+        <div class="card"><span>Saldo do mês</span><strong id="balance">R$ 0,00</strong></div>
+        <div class="card"><span>Saldo acumulado</span><strong id="overall">R$ 0,00</strong></div>
       </div>
-      <div id="chart" class="chart"></div>
-      <details class="chart-table">
-        <summary>Ver como tabela</summary>
-        <table>
-          <thead><tr><th>Mês</th><th>Receitas</th><th>Despesas</th><th>Saldo</th></tr></thead>
-          <tbody id="chart-table"></tbody>
-        </table>
-      </details>
+
+      <div class="grid-2">
+        <section class="panel wide">
+          <h3>Evolução dos últimos 6 meses</h3>
+          <div class="legend">
+            <span><i class="swatch s1"></i>Receitas</span>
+            <span><i class="swatch s2"></i>Despesas</span>
+          </div>
+          <div id="chart" class="chart"></div>
+          <details class="chart-table">
+            <summary>Ver como tabela</summary>
+            <div class="table-scroll">
+              <table>
+                <thead><tr><th>Mês</th><th>Receitas</th><th>Despesas</th><th>Saldo</th></tr></thead>
+                <tbody id="chart-table"></tbody>
+              </table>
+            </div>
+          </details>
+        </section>
+
+        <section class="panel">
+          <h3>Mapa de gastos do mês</h3>
+          <div id="heatmap" class="heatmap"></div>
+          <div class="heat-foot">
+            <p id="heat-detail" class="hint" aria-live="polite"></p>
+            <div class="heat-legend" aria-hidden="true">Menos <i class="l0"></i><i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i> Mais</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h3>Despesas por categoria</h3>
+          <div id="home-categories"></div>
+        </section>
+
+        <section class="panel">
+          <h3>Orçamentos</h3>
+          <div id="home-budgets"></div>
+        </section>
+
+        <section class="panel">
+          <h3>Últimas transações</h3>
+          <ul id="home-recent" class="tx-list"></ul>
+        </section>
+      </div>
     </section>
 
-    <section class="panel">
-      <h2 id="form-title">Nova transação</h2>
-      <form id="tx-form">
-        <input type="hidden" id="tx-id">
-        <div class="type-toggle" role="radiogroup" aria-label="Tipo">
-          <label><input type="radio" name="type" value="expense" checked> Despesa</label>
-          <label><input type="radio" name="type" value="income"> Receita</label>
+    <!-- Despesas -->
+    <section class="page" id="page-despesas" aria-labelledby="t-despesas" hidden>
+      <h2 class="page-title" id="t-despesas">Despesas · <span class="month-label"></span></h2>
+      <div class="split">
+        <div class="col">
+          <section class="panel">
+            <h3 id="expense-form-title">Nova despesa</h3>
+            <form id="expense-form"></form>
+          </section>
+          <section class="panel">
+            <h3>Despesas fixas</h3>
+            <p class="hint">Lançadas automaticamente todo mês. Encerrar mantém os meses já lançados.</p>
+            <ul id="expense-recurring" class="simple-list"></ul>
+          </section>
         </div>
-        <label>Descrição<input id="desc" required maxlength="80" placeholder="Ex.: Mercado"></label>
-        <label>Valor (R$)<input id="amount" type="number" step="0.01" min="0.01" required placeholder="0,00"></label>
-        <label>Categoria<select id="category"></select></label>
-        <label>Data<input id="date" type="date" required></label>
-        <label id="repeat-wrap">Repetição<select id="repeat">
-          <option value="none">Não repetir</option>
-          <option value="installments">Parcelado</option>
-          <option value="monthly">Todo mês (lançamento fixo)</option>
-        </select></label>
-        <label id="installments-wrap" hidden>Número de parcelas<input id="installments" type="number" min="2" max="60" value="2"></label>
-        <p id="repeat-hint" class="hint" hidden></p>
-        <div class="form-actions">
-          <button type="submit" class="primary" id="submit-btn">Adicionar</button>
-          <button type="button" id="cancel-edit" hidden>Cancelar</button>
-        </div>
-      </form>
-    </section>
-
-    <section class="panel">
-      <h2>Despesas por categoria</h2>
-      <div id="by-category"></div>
-    </section>
-
-    <section class="panel">
-      <h2>Orçamentos mensais</h2>
-      <p class="hint">Defina um limite de gasto por categoria. Deixe vazio para não usar.</p>
-      <div id="budgets"></div>
-    </section>
-
-    <section class="panel">
-      <h2>Lançamentos fixos</h2>
-      <p class="hint">Lançados automaticamente todo mês. Encerrar mantém os meses já lançados.</p>
-      <ul id="recurring-list" class="simple-list"></ul>
-    </section>
-
-    <section class="panel wide">
-      <div class="list-head">
-        <h2>Transações</h2>
-        <div class="filters">
-          <input id="search" type="search" placeholder="Buscar…" aria-label="Buscar">
-          <select id="filter-type" aria-label="Filtrar tipo">
-            <option value="">Todas</option>
-            <option value="income">Receitas</option>
-            <option value="expense">Despesas</option>
-          </select>
+        <div class="col">
+          <section class="panel">
+            <div class="list-head">
+              <h3>Lançamentos do mês <strong id="expense-total" class="neg"></strong></h3>
+              <input id="expense-search" type="search" placeholder="Buscar…" aria-label="Buscar despesas">
+            </div>
+            <ul id="expense-list" class="tx-list"></ul>
+            <p id="expense-empty" class="hint">Nenhuma despesa neste mês.</p>
+          </section>
+          <section class="panel">
+            <h3>Por categoria</h3>
+            <div id="expense-categories"></div>
+          </section>
+          <section class="panel">
+            <h3>Orçamentos mensais</h3>
+            <p class="hint">Defina um limite de gasto por categoria. Deixe vazio para não usar.</p>
+            <div id="budgets"></div>
+          </section>
         </div>
       </div>
-      <ul id="tx-list"></ul>
-      <p id="empty" class="hint">Nenhuma transação neste mês.</p>
     </section>
 
-    <section class="panel wide tools">
-      <button id="export">Exportar CSV</button>
-      <button id="backup">Baixar backup (JSON)</button>
-      <label class="file-btn">Restaurar backup<input type="file" id="restore" accept="application/json" hidden></label>
+    <!-- Receitas -->
+    <section class="page" id="page-receitas" aria-labelledby="t-receitas" hidden>
+      <h2 class="page-title" id="t-receitas">Receitas · <span class="month-label"></span></h2>
+      <div class="split">
+        <div class="col">
+          <section class="panel">
+            <h3 id="income-form-title">Nova receita</h3>
+            <form id="income-form"></form>
+          </section>
+          <section class="panel">
+            <h3>Receitas fixas</h3>
+            <p class="hint">Lançadas automaticamente todo mês. Encerrar mantém os meses já lançados.</p>
+            <ul id="income-recurring" class="simple-list"></ul>
+          </section>
+        </div>
+        <div class="col">
+          <section class="panel">
+            <div class="list-head">
+              <h3>Lançamentos do mês <strong id="income-total" class="pos"></strong></h3>
+              <input id="income-search" type="search" placeholder="Buscar…" aria-label="Buscar receitas">
+            </div>
+            <ul id="income-list" class="tx-list"></ul>
+            <p id="income-empty" class="hint">Nenhuma receita neste mês.</p>
+          </section>
+          <section class="panel">
+            <h3>Por origem</h3>
+            <div id="income-sources"></div>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <!-- Personalizar -->
+    <section class="page" id="page-personalizar" aria-labelledby="t-personalizar" hidden>
+      <h2 class="page-title" id="t-personalizar">Personalizar</h2>
+      <div class="settings">
+        <section class="panel settings-panel">
+          <h3>Aparência</h3>
+
+          <div class="setting">
+            <label for="set-name">Nome no topo</label>
+            <input id="set-name" maxlength="30" placeholder="Controle Financeiro">
+          </div>
+
+          <fieldset class="setting">
+            <legend>Cor principal</legend>
+            <div class="swatches" id="swatches"></div>
+            <label class="custom-color">Outra cor <input type="color" id="set-color"></label>
+          </fieldset>
+
+          <fieldset class="setting">
+            <legend>Tema</legend>
+            <div class="segmented">
+              <label><input type="radio" name="theme" value="auto"><span>Automático</span></label>
+              <label><input type="radio" name="theme" value="light"><span>Claro</span></label>
+              <label><input type="radio" name="theme" value="dark"><span>Escuro</span></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="setting">
+            <legend>Barra de navegação</legend>
+            <div class="segmented">
+              <label><input type="radio" name="nav" value="top"><span>No topo</span></label>
+              <label><input type="radio" name="nav" value="bottom"><span>Embaixo</span></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="setting">
+            <legend>Tamanho do texto</legend>
+            <div class="segmented">
+              <label><input type="radio" name="fontSize" value="normal"><span>Normal</span></label>
+              <label><input type="radio" name="fontSize" value="large"><span>Grande</span></label>
+            </div>
+          </fieldset>
+
+          <div><button type="button" id="reset-settings">Restaurar aparência padrão</button></div>
+        </section>
+
+        <section class="panel settings-panel">
+          <h3>Seus dados</h3>
+          <p class="hint" id="data-hint">Os dados ficam salvos só neste navegador. Baixe um backup de vez em quando para não perder nada.</p>
+          <div class="tools download-tools">
+            <button type="button" id="export">Exportar CSV</button>
+            <button type="button" id="backup">Baixar backup (JSON)</button>
+            <label class="file-btn">Restaurar backup<input type="file" id="restore" accept="application/json" hidden></label>
+          </div>
+          <div><button type="button" id="wipe" class="danger">Apagar todos os dados</button></div>
+        </section>
+      </div>
     </section>
   </main>
 

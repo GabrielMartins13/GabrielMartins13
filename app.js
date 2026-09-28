@@ -1,32 +1,56 @@
 'use strict';
 
 const STORAGE_KEY = 'controle-financeiro:v1';
+const SETTINGS_KEY = 'controle-financeiro:aparencia';
+const DEFAULT_NAME = 'Controle Financeiro';
+const TABS = ['inicio', 'despesas', 'receitas', 'personalizar'];
+const TYPE_TAB = { expense: 'despesas', income: 'receitas' };
 
 const CATEGORIES = {
   expense: ['Alimentação', 'Moradia', 'Transporte', 'Saúde', 'Educação', 'Lazer', 'Compras', 'Contas', 'Outros'],
   income: ['Salário', 'Freelance', 'Investimentos', 'Presente', 'Outros'],
 };
 
+// value vazio = cor padrão do tema (muda entre claro e escuro)
+const ACCENTS = [
+  { name: 'Azul', value: '' },
+  { name: 'Verde', value: '#1f8a5b' },
+  { name: 'Roxo', value: '#6a4fd8' },
+  { name: 'Rosa', value: '#c2417a' },
+  { name: 'Laranja', value: '#c4581b' },
+  { name: 'Grafite', value: '#475569' },
+];
+const DEFAULT_SETTINGS = { name: '', accent: '', theme: 'auto', nav: 'top', fontSize: 'normal' };
+
 const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const $ = (id) => document.getElementById(id);
 
-let state = load();
+// ---------- Armazenamento ----------
 
-function load() {
-  try {
-    const data = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (data && Array.isArray(data.transactions)) return normalize(data);
-  } catch { /* storage indisponível ou corrompido */ }
-  return { transactions: [], budgets: {}, recurring: [] };
+function readJSON(key) {
+  try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
+}
+
+function writeJSON(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch { return false; }
 }
 
 function normalize(data) {
   return {
-    transactions: data.transactions,
+    transactions: Array.isArray(data.transactions) ? data.transactions : [],
     budgets: data.budgets || {},
     recurring: Array.isArray(data.recurring) ? data.recurring : [],
   };
 }
+
+let state = normalize(readJSON(STORAGE_KEY) || {});
+let settings = { ...DEFAULT_SETTINGS, ...(readJSON(SETTINGS_KEY) || {}) };
+
+function save() {
+  if (!writeJSON(STORAGE_KEY, state)) notify('Não foi possível salvar os dados neste navegador.');
+}
+
+// ---------- Diálogo ----------
 
 // Diálogo próprio no lugar de confirm()/alert(), que nem todo ambiente exibe.
 // buttons: [{ label, value, primary? }]; resolve com o value clicado ou null.
@@ -59,17 +83,12 @@ const notify = (message) => ask(message);
 const confirmAction = async (message, label) =>
   (await ask(message, [{ label: 'Cancelar', value: false }, { label, value: true, primary: true }])) === true;
 
-function save() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    notify('Não foi possível salvar os dados neste navegador.');
-  }
-}
+// ---------- Datas ----------
 
+const pad = (n) => String(n).padStart(2, '0');
 const today = () => {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
 const currentMonth = () => $('month').value;
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -78,14 +97,13 @@ const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 function addMonths(ym, n) {
   const [y, m] = ym.split('-').map(Number);
   const d = new Date(y, m - 1 + n, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
 }
 
 // Data no mês informado, ajustando o dia para meses mais curtos (ex.: 31 → 30)
 function dateInMonth(ym, day) {
   const [y, m] = ym.split('-').map(Number);
-  const last = new Date(y, m, 0).getDate();
-  return `${ym}-${String(Math.min(day, last)).padStart(2, '0')}`;
+  return `${ym}-${pad(Math.min(day, new Date(y, m, 0).getDate()))}`;
 }
 
 function formatMonth(ym, withYear = true) {
@@ -93,6 +111,17 @@ function formatMonth(ym, withYear = true) {
   const name = new Date(y, m - 1, 1).toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
   return withYear ? `${name}/${String(y).slice(2)}` : name;
 }
+
+function monthName(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+// ---------- Dados ----------
 
 // Gera as transações dos lançamentos fixos até o mês atual (real), sem duplicar
 function materializeRecurring() {
@@ -111,79 +140,24 @@ function materializeRecurring() {
   }
   if (changed) save();
 }
-const selectedType = () => document.querySelector('input[name="type"]:checked').value;
 
-function fillCategories(type, selected) {
-  $('category').innerHTML = CATEGORIES[type]
-    .map((c) => `<option ${c === selected ? 'selected' : ''}>${c}</option>`)
-    .join('');
+const monthTransactions = (ym = currentMonth()) => state.transactions.filter((t) => t.date.startsWith(ym));
+const sum = (list, type) => list.filter((t) => t.type === type).reduce((acc, t) => acc + t.amount, 0);
+const byNewest = (a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id);
+
+function totalsByCategory(list, type) {
+  const totals = {};
+  for (const t of list) {
+    if (t.type === type) totals[t.category] = (totals[t.category] || 0) + t.amount;
+  }
+  return totals;
 }
 
-function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
-}
-
-function monthTransactions() {
-  return state.transactions.filter((t) => t.date.startsWith(currentMonth()));
-}
-
-function sum(list, type) {
-  return list.filter((t) => t.type === type).reduce((acc, t) => acc + t.amount, 0);
-}
+// ---------- Renderização ----------
 
 function setMoney(el, value, colorize) {
   el.textContent = brl.format(value);
   if (colorize) el.className = value < 0 ? 'neg' : 'pos';
-}
-
-function render() {
-  const list = monthTransactions();
-  const income = sum(list, 'income');
-  const expense = sum(list, 'expense');
-  const endOfMonth = currentMonth() + '-31';
-  const upToMonth = state.transactions.filter((t) => t.date <= endOfMonth);
-
-  setMoney($('total-income'), income);
-  setMoney($('total-expense'), expense);
-  setMoney($('balance'), income - expense, true);
-  setMoney($('overall'), sum(upToMonth, 'income') - sum(upToMonth, 'expense'), true);
-
-  renderList(list);
-  renderCategories(list);
-  renderBudgets(list);
-  renderRecurring();
-  renderChart();
-}
-
-function renderList(list) {
-  const q = $('search').value.trim().toLowerCase();
-  const type = $('filter-type').value;
-  const items = list
-    .filter((t) => (!type || t.type === type) && (!q || t.desc.toLowerCase().includes(q) || t.category.toLowerCase().includes(q)))
-    .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
-
-  $('tx-list').innerHTML = items.map((t) => {
-    const [y, m, d] = t.date.split('-');
-    const sign = t.type === 'income' ? '+' : '−';
-    const tag = t.ruleId ? ' · fixo' : '';
-    return `<li>
-      <div class="tx-info"><strong>${escapeHtml(t.desc)}</strong><small>${d}/${m}/${y} · ${escapeHtml(t.category)}${tag}</small></div>
-      <span class="tx-amount ${t.type === 'income' ? 'pos' : 'neg'}">${sign} ${brl.format(t.amount)}</span>
-      <div class="tx-actions">
-        <button data-edit="${t.id}">Editar</button>
-        <button data-del="${t.id}">Excluir</button>
-      </div>
-    </li>`;
-  }).join('');
-  $('empty').hidden = items.length > 0;
-}
-
-function spentByCategory(list) {
-  const totals = {};
-  for (const t of list) {
-    if (t.type === 'expense') totals[t.category] = (totals[t.category] || 0) + t.amount;
-  }
-  return totals;
 }
 
 function barRow(label, value, max, detail, cls = '') {
@@ -194,56 +168,60 @@ function barRow(label, value, max, detail, cls = '') {
   </div>`;
 }
 
-function renderCategories(list) {
-  const totals = Object.entries(spentByCategory(list)).sort((a, b) => b[1] - a[1]);
-  const total = totals.reduce((acc, [, v]) => acc + v, 0);
-  $('by-category').innerHTML = totals.length
-    ? totals.map(([c, v]) => barRow(c, v, total, `${brl.format(v)} · ${Math.round((v / total) * 100)}%`)).join('')
-    : '<p class="hint">Sem despesas neste mês.</p>';
+function renderShares(el, totals, emptyMessage) {
+  const entries = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+  const total = entries.reduce((acc, [, v]) => acc + v, 0);
+  el.innerHTML = entries.length
+    ? entries.map(([c, v]) => barRow(c, v, total, `${brl.format(v)} · ${Math.round((v / total) * 100)}%`)).join('')
+    : `<p class="hint">${emptyMessage}</p>`;
 }
 
-function renderBudgets(list) {
-  const spent = spentByCategory(list);
-  const container = $('budgets');
-  const focused = document.activeElement?.dataset?.budget;
-  container.innerHTML = CATEGORIES.expense.map((c) => {
-    const limit = state.budgets[c];
-    const value = spent[c] || 0;
-    let bar = '';
-    if (limit > 0) {
-      const ratio = value / limit;
-      const cls = ratio > 1 ? 'over' : ratio >= 0.8 ? 'warn' : '';
-      bar = barRow('', value, limit, `${brl.format(value)} de ${brl.format(limit)}`, cls);
-    }
-    return `<div class="budget-row"><span>${c}</span>
-      <input type="number" min="0" step="0.01" placeholder="Sem limite" data-budget="${c}" value="${limit || ''}" aria-label="Orçamento ${c}"></div>${bar}`;
-  }).join('');
-  if (focused) container.querySelector(`[data-budget="${focused}"]`)?.focus();
+function budgetBar(spent, limit) {
+  const ratio = spent / limit;
+  const cls = ratio > 1 ? 'over' : ratio >= 0.8 ? 'warn' : '';
+  return { cls, detail: `${brl.format(spent)} de ${brl.format(limit)}` };
 }
 
-function renderRecurring() {
-  $('recurring-list').innerHTML = state.recurring.length
-    ? state.recurring.map((r) => `<li>
-        <div><strong>${escapeHtml(r.desc)}</strong>
-          <small>${r.type === 'income' ? 'Receita' : 'Despesa'} · ${brl.format(r.amount)} · todo dia ${r.day} · desde ${formatMonth(r.start)}</small></div>
-        <button data-stop="${r.id}">Encerrar</button>
-      </li>`).join('')
-    : '<li class="hint">Nenhum lançamento fixo. Use “Todo mês” no formulário.</li>';
+function txItem(t, withActions) {
+  const [y, m, d] = t.date.split('-');
+  const sign = t.type === 'income' ? '+' : '−';
+  const tag = t.ruleId ? ' · fixa' : '';
+  return `<li${withActions ? '' : ' class="readonly"'}>
+    <div class="tx-info"><strong>${escapeHtml(t.desc)}</strong><small>${d}/${m}/${y} · ${escapeHtml(t.category)}${tag}</small></div>
+    <span class="tx-amount ${t.type === 'income' ? 'pos' : 'neg'}">${sign} ${brl.format(t.amount)}</span>
+    ${withActions ? `<div class="tx-actions">
+      <button type="button" data-edit="${t.id}">Editar</button>
+      <button type="button" data-del="${t.id}">Excluir</button>
+    </div>` : ''}
+  </li>`;
+}
+
+function renderSummary(list) {
+  const income = sum(list, 'income');
+  const expense = sum(list, 'expense');
+  const upToMonth = state.transactions.filter((t) => t.date <= `${currentMonth()}-31`);
+  setMoney($('total-income'), income);
+  setMoney($('total-expense'), expense);
+  setMoney($('balance'), income - expense, true);
+  setMoney($('overall'), sum(upToMonth, 'income') - sum(upToMonth, 'expense'), true);
 }
 
 function renderChart() {
+  const chart = $('chart');
   const months = Array.from({ length: 6 }, (_, i) => addMonths(currentMonth(), i - 5));
   const data = months.map((ym) => {
-    const list = state.transactions.filter((t) => t.date.startsWith(ym));
+    const list = monthTransactions(ym);
     return { ym, income: sum(list, 'income'), expense: sum(list, 'expense') };
   });
 
   $('chart-table').innerHTML = data.map((d) =>
     `<tr><td>${formatMonth(d.ym)}</td><td>${brl.format(d.income)}</td><td>${brl.format(d.expense)}</td><td>${brl.format(d.income - d.expense)}</td></tr>`).join('');
 
-  const chart = $('chart');
+  // Página oculta: desenha quando ela for exibida
+  if (!chart.clientWidth) return;
+
   // Desenha no tamanho real do container para o texto não escalar
-  const W = Math.max(280, chart.clientWidth), H = 220, padL = 56, padB = 24, padT = 8;
+  const W = Math.max(260, chart.clientWidth), H = 220, padL = 56, padB = 24, padT = 8;
   const plotW = W - padL, plotH = H - padB - padT;
   const rawMax = Math.max(...data.map((d) => Math.max(d.income, d.expense)));
   // Escala "redonda" para as linhas de grade: 1, 2 ou 5 × 10^n
@@ -280,9 +258,10 @@ function renderChart() {
   chart.querySelectorAll('path').forEach((p) => { p.style.pointerEvents = 'none'; });
 
   const tip = chart.querySelector('.tooltip');
+  const clear = () => chart.querySelectorAll('.hit.active').forEach((el) => el.classList.remove('active'));
   const show = (rect) => {
     const d = data[rect.dataset.i];
-    chart.querySelectorAll('.hit.active').forEach((el) => el.classList.remove('active'));
+    clear();
     rect.classList.add('active');
     tip.innerHTML = `<b>${formatMonth(d.ym)}</b>
       <div><i class="swatch s1"></i>Receitas ${brl.format(d.income)}</div>
@@ -298,97 +277,231 @@ function renderChart() {
     rect.addEventListener('mouseenter', () => show(rect));
     rect.addEventListener('click', () => show(rect));
   });
-  chart.querySelector('svg').addEventListener('mouseleave', () => {
-    tip.hidden = true;
-    chart.querySelectorAll('.hit.active').forEach((el) => el.classList.remove('active'));
-  });
+  chart.querySelector('svg').addEventListener('mouseleave', () => { tip.hidden = true; clear(); });
 }
 
-function updateRepeatFields() {
-  const mode = $('repeat').value;
-  $('installments-wrap').hidden = mode !== 'installments';
-  const hint = $('repeat-hint');
+// Calendário do mês com a intensidade de gasto por dia (4 níveis, relativo ao dia de maior gasto)
+function renderHeatmap(list) {
+  const ym = currentMonth();
+  const [y, m] = ym.split('-').map(Number);
+  const days = new Date(y, m, 0).getDate();
+  const offset = new Date(y, m - 1, 1).getDay();
+  const perDay = Array.from({ length: days + 1 }, () => ({ total: 0, count: 0 }));
+  for (const t of list) {
+    if (t.type !== 'expense') continue;
+    const d = perDay[Number(t.date.slice(8, 10))];
+    d.total += t.amount;
+    d.count += 1;
+  }
+  const max = Math.max(...perDay.map((d) => d.total));
+  const now = today();
+
+  let html = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((w) => `<span class="wd" aria-hidden="true">${w}</span>`).join('');
+  html += '<span aria-hidden="true"></span>'.repeat(offset);
+  for (let d = 1; d <= days; d++) {
+    const { total, count } = perDay[d];
+    const level = total > 0 ? Math.max(1, Math.ceil((total / max) * 4)) : 0;
+    const label = total > 0
+      ? `${pad(d)}/${pad(m)}: ${brl.format(total)} em ${count} despesa${count > 1 ? 's' : ''}`
+      : `${pad(d)}/${pad(m)}: sem despesas`;
+    const isToday = `${ym}-${pad(d)}` === now ? ' today' : '';
+    html += `<button type="button" class="day l${level}${isToday}" data-label="${label}" aria-label="${label}">${d}</button>`;
+  }
+  $('heatmap').innerHTML = html;
+
+  let top = 0;
+  for (let d = 1; d <= days; d++) if (perDay[d].total > (perDay[top]?.total || 0)) top = d;
+  const detail = $('heat-detail');
+  detail.dataset.default = top
+    ? `Dia de maior gasto: ${pad(top)}/${pad(m)}, com ${brl.format(perDay[top].total)}.`
+    : 'Nenhuma despesa neste mês ainda.';
+  detail.textContent = detail.dataset.default;
+}
+
+function renderBudgetsHome(list) {
+  const spent = totalsByCategory(list, 'expense');
+  const rows = CATEGORIES.expense.filter((c) => state.budgets[c] > 0).map((c) => {
+    const { cls, detail } = budgetBar(spent[c] || 0, state.budgets[c]);
+    return barRow(c, spent[c] || 0, state.budgets[c], detail, cls);
+  });
+  $('home-budgets').innerHTML = rows.length
+    ? rows.join('')
+    : '<p class="hint">Nenhum orçamento definido. Crie limites por categoria na página <a href="#despesas">Despesas</a>.</p>';
+}
+
+function renderBudgetsEditor(list) {
+  const spent = totalsByCategory(list, 'expense');
+  const container = $('budgets');
+  const focused = document.activeElement?.dataset?.budget;
+  container.innerHTML = CATEGORIES.expense.map((c) => {
+    const limit = state.budgets[c];
+    let bar = '';
+    if (limit > 0) {
+      const { cls, detail } = budgetBar(spent[c] || 0, limit);
+      bar = barRow('', spent[c] || 0, limit, detail, cls);
+    }
+    return `<div class="budget-row"><span>${c}</span>
+      <input type="number" min="0" step="0.01" placeholder="Sem limite" data-budget="${c}" value="${limit || ''}" aria-label="Orçamento ${c}"></div>${bar}`;
+  }).join('');
+  if (focused) container.querySelector(`[data-budget="${focused}"]`)?.focus();
+}
+
+function renderRecent(list) {
+  const items = [...list].sort(byNewest).slice(0, 6);
+  $('home-recent').innerHTML = items.length
+    ? items.map((t) => txItem(t, false)).join('')
+    : '<li class="readonly hint">Nenhuma transação neste mês.</li>';
+}
+
+function renderTxList(type, list = monthTransactions()) {
+  const q = $(`${type}-search`).value.trim().toLowerCase();
+  const ofType = list.filter((t) => t.type === type);
+  const items = ofType
+    .filter((t) => !q || t.desc.toLowerCase().includes(q) || t.category.toLowerCase().includes(q))
+    .sort(byNewest);
+  $(`${type}-list`).innerHTML = items.map((t) => txItem(t, true)).join('');
+  $(`${type}-empty`).hidden = items.length > 0;
+  $(`${type}-empty`).textContent = q && ofType.length
+    ? 'Nada encontrado para essa busca.'
+    : `Nenhuma ${type === 'expense' ? 'despesa' : 'receita'} neste mês.`;
+  $(`${type}-total`).textContent = brl.format(sum(ofType, type));
+}
+
+function renderRecurring(type) {
+  const rules = state.recurring.filter((r) => r.type === type);
+  $(`${type}-recurring`).innerHTML = rules.length
+    ? rules.map((r) => `<li>
+        <div><strong>${escapeHtml(r.desc)}</strong>
+          <small>${brl.format(r.amount)} · todo dia ${r.day} · desde ${formatMonth(r.start)}</small></div>
+        <button type="button" data-stop="${r.id}">Encerrar</button>
+      </li>`).join('')
+    : `<li class="hint">Nenhuma. Escolha “Todo mês” no formulário para criar.</li>`;
+}
+
+function render() {
+  const list = monthTransactions();
+  const label = monthName(currentMonth());
+  document.querySelectorAll('.month-label').forEach((el) => { el.textContent = label; });
+
+  renderSummary(list);
+  renderChart();
+  renderHeatmap(list);
+  renderShares($('home-categories'), totalsByCategory(list, 'expense'), 'Sem despesas neste mês.');
+  renderBudgetsHome(list);
+  renderRecent(list);
+
+  for (const type of ['expense', 'income']) {
+    renderTxList(type, list);
+    renderRecurring(type);
+  }
+  renderShares($('expense-categories'), totalsByCategory(list, 'expense'), 'Sem despesas neste mês.');
+  renderShares($('income-sources'), totalsByCategory(list, 'income'), 'Sem receitas neste mês.');
+  renderBudgetsEditor(list);
+}
+
+// ---------- Formulários de despesa e receita ----------
+
+const forms = {};
+
+function buildForm(type) {
+  const form = $(`${type}-form`);
+  const repeatOptions = [
+    '<option value="none">Não repetir</option>',
+    type === 'expense' ? '<option value="installments">Parcelado</option>' : '',
+    '<option value="monthly">Todo mês (fixa)</option>',
+  ].join('');
+  form.innerHTML = `
+    <input type="hidden" name="txid">
+    <label>Descrição<input id="${type}-desc" name="desc" required maxlength="80" placeholder="${type === 'expense' ? 'Ex.: Mercado' : 'Ex.: Salário'}"></label>
+    <div class="row2">
+      <label>Valor (R$)<input id="${type}-amount" name="amount" type="number" step="0.01" min="0.01" required inputmode="decimal" placeholder="0,00"></label>
+      <label>Data<input id="${type}-date" name="date" type="date" required></label>
+    </div>
+    <label>Categoria<select id="${type}-category" name="category">${CATEGORIES[type].map((c) => `<option>${c}</option>`).join('')}</select></label>
+    <label class="repeat-wrap">Repetição<select id="${type}-repeat" name="repeat">${repeatOptions}</select></label>
+    <label class="installments-wrap" hidden>Número de parcelas<input id="${type}-installments" name="installments" type="number" min="2" max="60" value="2"></label>
+    <p class="hint repeat-hint" hidden></p>
+    <div class="form-actions">
+      <button type="submit" class="primary">Adicionar</button>
+      <button type="button" class="cancel" hidden>Cancelar edição</button>
+    </div>`;
+  forms[type] = form;
+  form.elements.repeat.addEventListener('change', () => updateRepeatFields(type));
+  form.querySelector('.cancel').addEventListener('click', () => resetForm(type));
+  form.addEventListener('submit', (e) => { e.preventDefault(); submitForm(type); });
+}
+
+function updateRepeatFields(type) {
+  const form = forms[type];
+  const mode = form.elements.repeat.value;
+  form.querySelector('.installments-wrap').hidden = mode !== 'installments';
+  const hint = form.querySelector('.repeat-hint');
   hint.hidden = mode === 'none';
   hint.textContent = mode === 'installments'
     ? 'Informe o valor total da compra: ele será dividido nas parcelas, uma por mês a partir da data escolhida.'
     : 'O valor será lançado automaticamente todo mês, a partir da data escolhida, até você encerrar.';
 }
 
-function resetForm() {
-  $('tx-form').reset();
-  $('tx-id').value = '';
-  $('date').value = currentMonth() === today().slice(0, 7) ? today() : currentMonth() + '-01';
-  fillCategories('expense');
-  $('repeat-wrap').hidden = false;
-  updateRepeatFields();
-  $('form-title').textContent = 'Nova transação';
-  $('submit-btn').textContent = 'Adicionar';
-  $('cancel-edit').hidden = true;
+function resetForm(type) {
+  const form = forms[type];
+  form.reset();
+  form.elements.txid.value = '';
+  form.elements.date.value = currentMonth() === today().slice(0, 7) ? today() : `${currentMonth()}-01`;
+  form.querySelector('.repeat-wrap').hidden = false;
+  updateRepeatFields(type);
+  $(`${type}-form-title`).textContent = type === 'expense' ? 'Nova despesa' : 'Nova receita';
+  form.querySelector('[type="submit"]').textContent = 'Adicionar';
+  form.querySelector('.cancel').hidden = true;
 }
 
 function startEdit(id) {
   const t = state.transactions.find((x) => x.id === id);
   if (!t) return;
-  document.querySelector(`input[name="type"][value="${t.type}"]`).checked = true;
-  fillCategories(t.type, t.category);
-  $('tx-id').value = t.id;
-  $('desc').value = t.desc;
-  $('amount').value = t.amount;
-  $('date').value = t.date;
-  $('repeat-wrap').hidden = true;
-  $('repeat').value = 'none';
-  updateRepeatFields();
-  $('form-title').textContent = 'Editar transação';
-  $('submit-btn').textContent = 'Salvar';
-  $('cancel-edit').hidden = false;
-  $('desc').focus();
+  goTo(TYPE_TAB[t.type]);
+  const form = forms[t.type];
+  const el = form.elements;
+  el.txid.value = t.id;
+  el.desc.value = t.desc;
+  el.amount.value = t.amount;
+  el.date.value = t.date;
+  el.category.value = t.category;
+  el.repeat.value = 'none';
+  form.querySelector('.repeat-wrap').hidden = true;
+  updateRepeatFields(t.type);
+  $(`${t.type}-form-title`).textContent = t.type === 'expense' ? 'Editar despesa' : 'Editar receita';
+  form.querySelector('[type="submit"]').textContent = 'Salvar';
+  form.querySelector('.cancel').hidden = false;
+  form.scrollIntoView({ block: 'center' });
+  el.desc.focus({ preventScroll: true });
 }
 
-function shiftMonth(delta) {
-  $('month').value = addMonths(currentMonth(), delta);
-  resetForm();
-  render();
-}
-
-function download(filename, content, type) {
-  const url = URL.createObjectURL(new Blob([content], { type }));
-  const a = Object.assign(document.createElement('a'), { href: url, download: filename });
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function csvField(v) {
-  const s = String(v);
-  return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
-// Eventos
-$('tx-form').addEventListener('submit', (e) => {
-  e.preventDefault();
-  const amount = Math.round(parseFloat($('amount').value) * 100) / 100;
+async function submitForm(type) {
+  const el = forms[type].elements;
+  const amount = Math.round(parseFloat(el.amount.value) * 100) / 100;
   if (!(amount > 0)) return;
-  const editingId = $('tx-id').value;
+  const editingId = el.txid.value;
   const tx = {
     id: editingId || newId(),
-    type: selectedType(),
-    desc: $('desc').value.trim(),
+    type,
+    desc: el.desc.value.trim(),
     amount,
-    category: $('category').value,
-    date: $('date').value,
+    category: el.category.value,
+    date: el.date.value,
   };
-  const mode = editingId ? 'none' : $('repeat').value;
+  const mode = editingId ? 'none' : el.repeat.value;
 
   if (editingId) {
     const idx = state.transactions.findIndex((t) => t.id === editingId);
+    if (idx < 0) return resetForm(type);
     // Preserva o vínculo com parcelamento/lançamento fixo
-    const { groupId, ruleId } = state.transactions[idx] || {};
+    const { groupId, ruleId } = state.transactions[idx];
     state.transactions[idx] = { ...tx, ...(groupId && { groupId }), ...(ruleId && { ruleId }) };
   } else if (mode === 'installments') {
-    const n = Math.round(Number($('installments').value));
-    if (!(n >= 2 && n <= 60)) { notify('O número de parcelas deve ser entre 2 e 60.'); return; }
+    const n = Math.round(Number(el.installments.value));
+    if (!(n >= 2 && n <= 60)) return notify('O número de parcelas deve ser entre 2 e 60.');
     const cents = Math.round(amount * 100);
     const base = Math.floor(cents / n);
-    if (base < 1) { notify('O valor é baixo demais para esse número de parcelas.'); return; }
+    if (base < 1) return notify('O valor é baixo demais para esse número de parcelas.');
     const groupId = newId();
     const day = Number(tx.date.slice(8, 10));
     for (let i = 0; i < n; i++) {
@@ -404,7 +517,7 @@ $('tx-form').addEventListener('submit', (e) => {
     }
   } else if (mode === 'monthly') {
     state.recurring.push({
-      id: tx.id, type: tx.type, desc: tx.desc, amount: tx.amount, category: tx.category,
+      id: tx.id, type, desc: tx.desc, amount: tx.amount, category: tx.category,
       day: Number(tx.date.slice(8, 10)), start: tx.date.slice(0, 7), skipped: [],
     });
     materializeRecurring();
@@ -412,70 +525,154 @@ $('tx-form').addEventListener('submit', (e) => {
     state.transactions.push(tx);
   }
   save();
-  if (!tx.date.startsWith(currentMonth())) $('month').value = tx.date.slice(0, 7);
-  resetForm();
-  render();
-});
-
-document.querySelectorAll('input[name="type"]').forEach((r) =>
-  r.addEventListener('change', () => fillCategories(selectedType())));
-
-$('cancel-edit').addEventListener('click', resetForm);
-
-$('tx-list').addEventListener('click', async (e) => {
-  const { edit, del } = e.target.dataset;
-  if (edit) startEdit(edit);
-  if (del) {
-    const tx = state.transactions.find((t) => t.id === del);
-    if (!tx) return;
-    const siblings = tx.groupId ? state.transactions.filter((t) => t.groupId === tx.groupId && t.id !== del) : [];
-    const choice = siblings.length
-      ? await ask(`Excluir "${tx.desc}"? Esta compra tem mais ${siblings.length} parcela(s).`, [
-        { label: 'Cancelar', value: null },
-        { label: 'Só esta parcela', value: 'one' },
-        { label: 'Todas as parcelas', value: 'all', primary: true },
-      ])
-      : (await confirmAction(`Excluir "${tx.desc}"?`, 'Excluir')) && 'one';
-    if (!choice) return;
-    const removeAll = choice === 'all';
-    state.transactions = state.transactions.filter((t) => t.id !== del && !(removeAll && t.groupId === tx.groupId));
-    // Não recriar este mês de um lançamento fixo
-    const rule = tx?.ruleId && state.recurring.find((r) => r.id === tx.ruleId);
-    if (rule) rule.skipped = [...(rule.skipped || []), tx.date.slice(0, 7)];
-    save();
-    if ($('tx-id').value === del || (removeAll && siblings.some((t) => t.id === $('tx-id').value))) resetForm();
-    render();
+  if (!tx.date.startsWith(currentMonth())) {
+    $('month').value = tx.date.slice(0, 7);
+    resetForm(type === 'expense' ? 'income' : 'expense');
   }
-});
+  resetForm(type);
+  render();
+}
 
-$('recurring-list').addEventListener('click', async (e) => {
-  const id = e.target.dataset.stop;
-  if (!id) return;
+async function deleteTx(id) {
+  const tx = state.transactions.find((t) => t.id === id);
+  if (!tx) return;
+  const siblings = tx.groupId ? state.transactions.filter((t) => t.groupId === tx.groupId && t.id !== id) : [];
+  const choice = siblings.length
+    ? await ask(`Excluir "${tx.desc}"? Esta compra tem mais ${siblings.length} parcela(s).`, [
+      { label: 'Cancelar', value: null },
+      { label: 'Só esta parcela', value: 'one' },
+      { label: 'Todas as parcelas', value: 'all', primary: true },
+    ])
+    : (await confirmAction(`Excluir "${tx.desc}"?`, 'Excluir')) && 'one';
+  if (!choice) return;
+  const removed = new Set([id, ...(choice === 'all' ? siblings.map((t) => t.id) : [])]);
+  state.transactions = state.transactions.filter((t) => !removed.has(t.id));
+  // Não recriar este mês de um lançamento fixo
+  const rule = tx.ruleId && state.recurring.find((r) => r.id === tx.ruleId);
+  if (rule) rule.skipped = [...(rule.skipped || []), tx.date.slice(0, 7)];
+  save();
+  for (const type of ['expense', 'income']) {
+    if (removed.has(forms[type].elements.txid.value)) resetForm(type);
+  }
+  render();
+}
+
+async function stopRecurring(id) {
   const rule = state.recurring.find((r) => r.id === id);
-  if (!rule || !(await confirmAction(`Encerrar o lançamento fixo "${rule.desc}"? Os meses já lançados serão mantidos.`, 'Encerrar'))) return;
+  if (!rule || !(await confirmAction(`Encerrar "${rule.desc}"? Os meses já lançados serão mantidos.`, 'Encerrar'))) return;
   state.recurring = state.recurring.filter((r) => r.id !== id);
   save();
   render();
-});
+}
 
-$('repeat').addEventListener('change', updateRepeatFields);
+// ---------- Páginas ----------
 
-$('budgets').addEventListener('change', (e) => {
-  const cat = e.target.dataset.budget;
-  if (!cat) return;
-  const v = parseFloat(e.target.value);
-  if (v > 0) state.budgets[cat] = Math.round(v * 100) / 100;
-  else delete state.budgets[cat];
-  save();
-  render();
-});
+let activeTab = null;
 
-$('month').addEventListener('change', () => { if (currentMonth()) { resetForm(); render(); } });
-$('prev-month').addEventListener('click', () => shiftMonth(-1));
-$('next-month').addEventListener('click', () => shiftMonth(1));
-$('search').addEventListener('input', () => renderList(monthTransactions()));
-$('filter-type').addEventListener('change', () => renderList(monthTransactions()));
+function tabFromHash() {
+  const t = location.hash.slice(1);
+  return TABS.includes(t) ? t : 'inicio';
+}
 
+function showTab(tab = tabFromHash()) {
+  const changed = tab !== activeTab;
+  activeTab = tab;
+  for (const t of TABS) $(`page-${t}`).hidden = t !== tab;
+  document.querySelectorAll('#tabbar a').forEach((a) => {
+    if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page');
+    else a.removeAttribute('aria-current');
+  });
+  $('month-nav').hidden = tab === 'personalizar';
+  if (tab === 'inicio') renderChart();
+  if (changed) window.scrollTo(0, 0);
+}
+
+function goTo(tab) {
+  showTab(tab);
+  if (location.hash !== `#${tab}`) location.hash = tab;
+}
+
+// ---------- Personalização ----------
+
+const hostTheme = document.documentElement.getAttribute('data-theme');
+
+// Texto branco ou escuro, o que tiver mais contraste com a cor escolhida
+function textOn(hex) {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return lum > 0.4 ? '#111111' : '#ffffff';
+}
+
+function applySettings() {
+  const root = document.documentElement;
+  if (/^#[0-9a-f]{6}$/i.test(settings.accent)) {
+    root.style.setProperty('--accent', settings.accent);
+    root.style.setProperty('--on-accent', textOn(settings.accent));
+  } else {
+    root.style.removeProperty('--accent');
+    root.style.removeProperty('--on-accent');
+  }
+  if (settings.theme === 'light' || settings.theme === 'dark') root.setAttribute('data-theme', settings.theme);
+  else if (hostTheme) root.setAttribute('data-theme', hostTheme);
+  else root.removeAttribute('data-theme');
+  document.body.classList.toggle('nav-bottom', settings.nav === 'bottom');
+  root.style.fontSize = settings.fontSize === 'large' ? '112.5%' : '';
+  const name = settings.name.trim() || DEFAULT_NAME;
+  $('app-name').textContent = name;
+  document.title = name;
+  if (activeTab === 'inicio') renderChart();
+}
+
+function syncSettingsForm() {
+  $('set-name').value = settings.name;
+  $('set-color').value = settings.accent || '#2f6fde';
+  document.querySelectorAll('input[name="accent"]').forEach((r) => { r.checked = r.value === settings.accent; });
+  for (const key of ['theme', 'nav', 'fontSize']) {
+    document.querySelectorAll(`input[name="${key}"]`).forEach((r) => { r.checked = r.value === settings[key]; });
+  }
+}
+
+function buildSettings() {
+  $('swatches').innerHTML = ACCENTS.map((a) => `<label class="swatch-opt">
+      <input type="radio" name="accent" value="${a.value}">
+      <span style="--c:${a.value || 'var(--accent-default)'}"></span>${a.name}
+    </label>`).join('');
+
+  $('page-personalizar').addEventListener('input', (e) => {
+    const t = e.target;
+    if (t.id === 'set-name') settings.name = t.value;
+    else if (t.id === 'set-color') settings.accent = t.value;
+    else if (['accent', 'theme', 'nav', 'fontSize'].includes(t.name)) settings[t.name] = t.value;
+    else return;
+    writeJSON(SETTINGS_KEY, settings);
+    applySettings();
+    if (t.id === 'set-color') syncSettingsForm();
+  });
+
+  $('reset-settings').addEventListener('click', () => {
+    settings = { ...DEFAULT_SETTINGS };
+    writeJSON(SETTINGS_KEY, settings);
+    applySettings();
+    syncSettingsForm();
+  });
+}
+
+// ---------- Exportação e backup ----------
+
+function download(filename, content, type) {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: filename });
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function csvField(v) {
+  const s = String(v);
+  return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+// Os botões de arquivo são opcionais (a versão publicada no Claude não os tem)
 $('export')?.addEventListener('click', () => {
   const rows = [['Data', 'Tipo', 'Descrição', 'Categoria', 'Valor']];
   [...state.transactions].sort((a, b) => a.date.localeCompare(b.date)).forEach((t) =>
@@ -507,14 +704,77 @@ $('restore')?.addEventListener('change', async (e) => {
   }
 });
 
+$('wipe').addEventListener('click', async () => {
+  if (!(await confirmAction('Apagar todas as transações, lançamentos fixos e orçamentos? Isso não pode ser desfeito.', 'Apagar tudo'))) return;
+  state = normalize({});
+  save();
+  resetForm('expense');
+  resetForm('income');
+  render();
+});
+
+// ---------- Eventos gerais ----------
+
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-edit], button[data-del], button[data-stop]');
+  if (!btn) return;
+  const { edit, del, stop } = btn.dataset;
+  if (edit) startEdit(edit);
+  else if (del) deleteTx(del);
+  else if (stop) stopRecurring(stop);
+});
+
+$('budgets').addEventListener('change', (e) => {
+  const cat = e.target.dataset.budget;
+  if (!cat) return;
+  const v = parseFloat(e.target.value);
+  if (v > 0) state.budgets[cat] = Math.round(v * 100) / 100;
+  else delete state.budgets[cat];
+  save();
+  render();
+});
+
+// Detalhe do dia no mapa de gastos
+const heatmap = $('heatmap');
+const showDay = (e) => {
+  const day = e.target.closest('.day');
+  if (day) $('heat-detail').textContent = day.dataset.label;
+};
+heatmap.addEventListener('mouseover', showDay);
+heatmap.addEventListener('focusin', showDay);
+heatmap.addEventListener('click', showDay);
+heatmap.addEventListener('mouseleave', () => { $('heat-detail').textContent = $('heat-detail').dataset.default; });
+
+function changeMonth(ym) {
+  $('month').value = ym;
+  resetForm('expense');
+  resetForm('income');
+  render();
+}
+
+$('month').addEventListener('change', () => { if (currentMonth()) changeMonth(currentMonth()); });
+$('prev-month').addEventListener('click', () => changeMonth(addMonths(currentMonth(), -1)));
+$('next-month').addEventListener('click', () => changeMonth(addMonths(currentMonth(), 1)));
+$('expense-search').addEventListener('input', () => renderTxList('expense'));
+$('income-search').addEventListener('input', () => renderTxList('income'));
+window.addEventListener('hashchange', () => showTab());
+
 let resizeTimer;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(renderChart, 150);
 });
 
-// Início
+// ---------- Início ----------
+
+buildForm('expense');
+buildForm('income');
+buildSettings();
+applySettings();
+syncSettingsForm();
 materializeRecurring();
 $('month').value = today().slice(0, 7);
-resetForm();
+resetForm('expense');
+resetForm('income');
+showTab();
 render();
