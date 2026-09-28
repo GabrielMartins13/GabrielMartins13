@@ -28,11 +28,42 @@ function normalize(data) {
   };
 }
 
+// Diálogo próprio no lugar de confirm()/alert(), que nem todo ambiente exibe.
+// buttons: [{ label, value, primary? }]; resolve com o value clicado ou null.
+function ask(message, buttons = [{ label: 'OK', value: true, primary: true }]) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal';
+    overlay.innerHTML = `<div class="modal-box" role="alertdialog" aria-modal="true" aria-labelledby="modal-msg">
+      <p id="modal-msg"></p><div class="modal-actions"></div></div>`;
+    overlay.querySelector('p').textContent = message;
+    const actions = overlay.querySelector('.modal-actions');
+    const close = (value) => { overlay.remove(); document.removeEventListener('keydown', onKey); resolve(value); };
+    const onKey = (e) => { if (e.key === 'Escape') close(null); };
+    for (const b of buttons) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = b.label;
+      if (b.primary) btn.className = 'primary';
+      btn.addEventListener('click', () => close(b.value));
+      actions.append(btn);
+    }
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
+    document.addEventListener('keydown', onKey);
+    document.body.append(overlay);
+    actions.querySelector('button').focus(); // o primeiro botão é sempre o mais seguro (Cancelar/OK)
+  });
+}
+
+const notify = (message) => ask(message);
+const confirmAction = async (message, label) =>
+  (await ask(message, [{ label: 'Cancelar', value: false }, { label, value: true, primary: true }])) === true;
+
 function save() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch {
-    alert('Não foi possível salvar os dados neste navegador.');
+    notify('Não foi possível salvar os dados neste navegador.');
   }
 }
 
@@ -354,10 +385,10 @@ $('tx-form').addEventListener('submit', (e) => {
     state.transactions[idx] = { ...tx, ...(groupId && { groupId }), ...(ruleId && { ruleId }) };
   } else if (mode === 'installments') {
     const n = Math.round(Number($('installments').value));
-    if (!(n >= 2 && n <= 60)) { alert('Número de parcelas deve ser entre 2 e 60.'); return; }
+    if (!(n >= 2 && n <= 60)) { notify('O número de parcelas deve ser entre 2 e 60.'); return; }
     const cents = Math.round(amount * 100);
     const base = Math.floor(cents / n);
-    if (base < 1) { alert('Valor muito baixo para esse número de parcelas.'); return; }
+    if (base < 1) { notify('O valor é baixo demais para esse número de parcelas.'); return; }
     const groupId = newId();
     const day = Number(tx.date.slice(8, 10));
     for (let i = 0; i < n; i++) {
@@ -391,28 +422,37 @@ document.querySelectorAll('input[name="type"]').forEach((r) =>
 
 $('cancel-edit').addEventListener('click', resetForm);
 
-$('tx-list').addEventListener('click', (e) => {
+$('tx-list').addEventListener('click', async (e) => {
   const { edit, del } = e.target.dataset;
   if (edit) startEdit(edit);
-  if (del && confirm('Excluir esta transação?')) {
+  if (del) {
     const tx = state.transactions.find((t) => t.id === del);
-    const siblings = tx?.groupId ? state.transactions.filter((t) => t.groupId === tx.groupId && t.id !== del) : [];
-    const removeAll = siblings.length > 0 && confirm(`Excluir também as outras ${siblings.length} parcelas desta compra?`);
+    if (!tx) return;
+    const siblings = tx.groupId ? state.transactions.filter((t) => t.groupId === tx.groupId && t.id !== del) : [];
+    const choice = siblings.length
+      ? await ask(`Excluir "${tx.desc}"? Esta compra tem mais ${siblings.length} parcela(s).`, [
+        { label: 'Cancelar', value: null },
+        { label: 'Só esta parcela', value: 'one' },
+        { label: 'Todas as parcelas', value: 'all', primary: true },
+      ])
+      : (await confirmAction(`Excluir "${tx.desc}"?`, 'Excluir')) && 'one';
+    if (!choice) return;
+    const removeAll = choice === 'all';
     state.transactions = state.transactions.filter((t) => t.id !== del && !(removeAll && t.groupId === tx.groupId));
     // Não recriar este mês de um lançamento fixo
     const rule = tx?.ruleId && state.recurring.find((r) => r.id === tx.ruleId);
     if (rule) rule.skipped = [...(rule.skipped || []), tx.date.slice(0, 7)];
     save();
-    if ($('tx-id').value === del) resetForm();
+    if ($('tx-id').value === del || (removeAll && siblings.some((t) => t.id === $('tx-id').value))) resetForm();
     render();
   }
 });
 
-$('recurring-list').addEventListener('click', (e) => {
+$('recurring-list').addEventListener('click', async (e) => {
   const id = e.target.dataset.stop;
   if (!id) return;
   const rule = state.recurring.find((r) => r.id === id);
-  if (!rule || !confirm(`Encerrar o lançamento fixo "${rule.desc}"? Os meses já lançados serão mantidos.`)) return;
+  if (!rule || !(await confirmAction(`Encerrar o lançamento fixo "${rule.desc}"? Os meses já lançados serão mantidos.`, 'Encerrar'))) return;
   state.recurring = state.recurring.filter((r) => r.id !== id);
   save();
   render();
@@ -436,7 +476,7 @@ $('next-month').addEventListener('click', () => shiftMonth(1));
 $('search').addEventListener('input', () => renderList(monthTransactions()));
 $('filter-type').addEventListener('change', () => renderList(monthTransactions()));
 
-$('export').addEventListener('click', () => {
+$('export')?.addEventListener('click', () => {
   const rows = [['Data', 'Tipo', 'Descrição', 'Categoria', 'Valor']];
   [...state.transactions].sort((a, b) => a.date.localeCompare(b.date)).forEach((t) =>
     rows.push([t.date, t.type === 'income' ? 'Receita' : 'Despesa', t.desc, t.category, t.amount.toFixed(2).replace('.', ',')]));
@@ -444,10 +484,10 @@ $('export').addEventListener('click', () => {
   download('transacoes.csv', '﻿' + rows.map((r) => r.map(csvField).join(';')).join('\n'), 'text/csv;charset=utf-8');
 });
 
-$('backup').addEventListener('click', () =>
+$('backup')?.addEventListener('click', () =>
   download(`backup-financeiro-${today()}.json`, JSON.stringify(state, null, 2), 'application/json'));
 
-$('restore').addEventListener('change', async (e) => {
+$('restore')?.addEventListener('change', async (e) => {
   const file = e.target.files[0];
   e.target.value = '';
   if (!file) return;
@@ -457,13 +497,13 @@ $('restore').addEventListener('change', async (e) => {
       t && typeof t.id === 'string' && ['income', 'expense'].includes(t.type) && typeof t.desc === 'string' &&
       typeof t.amount === 'number' && typeof t.category === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(t.date));
     if (!valid) throw new Error('formato inválido');
-    if (!confirm(`Substituir os dados atuais por ${data.transactions.length} transações do backup?`)) return;
+    if (!(await confirmAction(`Substituir os dados atuais por ${data.transactions.length} transações do backup?`, 'Substituir'))) return;
     state = normalize(data);
     materializeRecurring();
     save();
     render();
   } catch {
-    alert('Arquivo de backup inválido.');
+    notify('Este arquivo não é um backup válido do Controle Financeiro.');
   }
 });
 
