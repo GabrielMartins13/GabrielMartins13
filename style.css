@@ -90,6 +90,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
   padding: 12px 16px; background: var(--surface);
 }
 .month-nav { display: flex; gap: 6px; align-items: center; }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.brand img { width: 40px; height: 40px; border-radius: 10px; flex: none; }
+.brand h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .tabbar {
   position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;

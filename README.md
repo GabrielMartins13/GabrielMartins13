@@ -20,3 +20,4 @@ Ou abra o arquivo `index.html` direto no navegador.
 - `index.html` — estrutura da página
 - `style.css` — estilos
 - `app.js` — lógica e armazenamento
+- `img/` — logo do app (topo, ícone da aba e da tela inicial do celular)
