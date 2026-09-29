@@ -3,13 +3,25 @@
 const STORAGE_KEY = 'controle-financeiro:v1';
 const SETTINGS_KEY = 'controle-financeiro:aparencia';
 const DEFAULT_NAME = 'FYNA';
-const TABS = ['inicio', 'despesas', 'receitas', 'personalizar'];
+const TABS = ['inicio', 'despesas', 'receitas', 'cartoes', 'personalizar'];
 const TYPE_TAB = { expense: 'despesas', income: 'receitas' };
 
 const CATEGORIES = {
   expense: ['Alimentação', 'Moradia', 'Transporte', 'Saúde', 'Educação', 'Lazer', 'Compras', 'Contas', 'Outros'],
   income: ['Salário', 'Freelance', 'Investimentos', 'Presente', 'Outros'],
 };
+
+const METHODS = { credit: 'Crédito', debit: 'Débito', pix: 'Pix', cash: 'Dinheiro' };
+const CARD_COLORS = [
+  { name: 'Roxo', value: '#820ad1' },
+  { name: 'Verde', value: '#11a650' },
+  { name: 'Laranja', value: '#ec7000' },
+  { name: 'Vermelho', value: '#cc092f' },
+  { name: 'Azul', value: '#1a5fd6' },
+  { name: 'Amarelo', value: '#d99a00' },
+  { name: 'Rosa', value: '#d6246e' },
+  { name: 'Preto', value: '#2b2b2b' },
+];
 
 // value vazio = cor padrão do tema (muda entre claro e escuro)
 const ACCENTS = [
@@ -40,6 +52,7 @@ function normalize(data) {
     transactions: Array.isArray(data.transactions) ? data.transactions : [],
     budgets: data.budgets || {},
     recurring: Array.isArray(data.recurring) ? data.recurring : [],
+    cards: Array.isArray(data.cards) ? data.cards : [],
   };
 }
 
@@ -156,11 +169,43 @@ function materializeRecurring() {
       if (state.transactions.some((t) => t.id === id)) continue;
       state.transactions.push({
         id, ruleId: r.id, type: r.type, desc: r.desc, amount: r.amount, category: r.category, date: dateInMonth(ym, r.day),
+        ...payment(r),
       });
       changed = true;
     }
   }
   if (changed) save();
+}
+
+// ---------- Cartões e formas de pagamento ----------
+
+const safeColor = (c) => (/^#[0-9a-f]{6}$/i.test(c) ? c : '#6b7684');
+const cardById = (id) => state.cards.find((c) => c.id === id);
+const usesCard = (method) => method === 'credit' || method === 'debit';
+
+// Só os campos de pagamento de uma despesa/regra (para copiar entre objetos)
+function payment(src) {
+  const out = {};
+  if (src.method) out.method = src.method;
+  if (src.cardId) out.cardId = src.cardId;
+  return out;
+}
+
+// Rótulo e cor da forma de pagamento; null quando não informada
+function payInfo(t) {
+  if (t.type !== 'expense' || !METHODS[t.method]) return null;
+  if (t.cardId) {
+    const card = cardById(t.cardId);
+    return { text: `${card ? card.name : 'Cartão excluído'} · ${METHODS[t.method].toLowerCase()}`, color: card ? safeColor(card.color) : null };
+  }
+  return { text: METHODS[t.method], color: null };
+}
+
+function payHtml(t) {
+  const info = payInfo(t);
+  if (!info) return '';
+  const dot = info.color ? `<i class="card-dot" style="--c:${info.color}"></i>` : '';
+  return ` · <span class="pay">${dot}${escapeHtml(info.text)}</span>`;
 }
 
 const monthTransactions = (ym = currentMonth()) => state.transactions.filter((t) => t.date.startsWith(ym));
@@ -182,11 +227,12 @@ function setMoney(el, value, colorize) {
   if (colorize) el.className = value < 0 ? 'neg' : 'pos';
 }
 
-function barRow(label, value, max, detail, cls = '') {
+function barRow(label, value, max, detail, cls = '', color = null) {
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
+  const bg = color ? `;background:${safeColor(color)}` : '';
   return `<div class="bar-row">
     <div class="bar-label"><span>${escapeHtml(label)}</span><span>${detail}</span></div>
-    <div class="bar"><div class="${cls}" style="width:${pct}%"></div></div>
+    <div class="bar"><div class="${cls}" style="width:${pct}%${bg}"></div></div>
   </div>`;
 }
 
@@ -209,7 +255,7 @@ function txItem(t, withActions) {
   const sign = t.type === 'income' ? '+' : '−';
   const tag = t.ruleId ? ' · fixa' : '';
   return `<li${withActions ? '' : ' class="readonly"'}>
-    <div class="tx-info"><strong>${escapeHtml(t.desc)}</strong><small>${d}/${m}/${y} · ${escapeHtml(t.category)}${tag}</small></div>
+    <div class="tx-info"><strong>${escapeHtml(t.desc)}</strong><small>${d}/${m}/${y} · ${escapeHtml(t.category)}${tag}${payHtml(t)}</small></div>
     <span class="tx-amount ${t.type === 'income' ? 'pos' : 'neg'}">${sign} ${brl.format(t.amount)}</span>
     ${withActions ? `<div class="tx-actions">
       <button type="button" data-edit="${t.id}">Editar</button>
@@ -559,16 +605,18 @@ function renderRecent(list) {
 
 function renderTxList(type, list = monthTransactions()) {
   const q = $(`${type}-search`).value.trim().toLowerCase();
+  const pf = type === 'expense' ? $('expense-pay-filter').value : '';
   const ofType = list.filter((t) => t.type === type);
   const items = ofType
     .filter((t) => !q || t.desc.toLowerCase().includes(q) || t.category.toLowerCase().includes(q))
+    .filter((t) => !pf || (pf.startsWith('card:') ? t.cardId === pf.slice(5) : t.method === pf))
     .sort(byNewest);
   $(`${type}-list`).innerHTML = items.map((t) => txItem(t, true)).join('');
   $(`${type}-empty`).hidden = items.length > 0;
-  $(`${type}-empty`).textContent = q && ofType.length
-    ? 'Nada encontrado para essa busca.'
+  $(`${type}-empty`).textContent = (q || pf) && ofType.length
+    ? 'Nada encontrado com esse filtro.'
     : `Nenhuma ${type === 'expense' ? 'despesa' : 'receita'} neste mês.`;
-  $(`${type}-total`).textContent = brl.format(sum(ofType, type));
+  $(`${type}-total`).textContent = brl.format(sum(items, type));
 }
 
 function renderRecurring(type) {
@@ -576,7 +624,7 @@ function renderRecurring(type) {
   $(`${type}-recurring`).innerHTML = rules.length
     ? rules.map((r) => `<li>
         <div><strong>${escapeHtml(r.desc)}</strong>
-          <small>${brl.format(r.amount)} · todo dia ${r.day} · desde ${formatMonth(r.start)}</small></div>
+          <small>${brl.format(r.amount)} · todo dia ${r.day} · desde ${formatMonth(r.start)}${payHtml(r)}</small></div>
         <button type="button" data-stop="${r.id}">Encerrar</button>
       </li>`).join('')
     : `<li class="hint">Nenhuma. Escolha “Todo mês” no formulário para criar.</li>`;
@@ -602,6 +650,160 @@ function render() {
   renderShares($('expense-categories'), totalsByCategory(list, 'expense'), 'Sem despesas neste mês.');
   renderShares($('income-sources'), totalsByCategory(list, 'income'), 'Sem receitas neste mês.');
   renderBudgetsEditor(list);
+  fillCardOptions();
+  renderPayments(list);
+  renderCards(list);
+}
+
+function renderPayments(list) {
+  const groups = new Map();
+  for (const t of list) {
+    if (t.type !== 'expense') continue;
+    const card = t.cardId && cardById(t.cardId);
+    const key = card ? `card:${card.id}` : METHODS[t.method] ? t.method : 'none';
+    const label = card ? card.name : METHODS[t.method] || 'Não informado';
+    const g = groups.get(key) || { label, total: 0, color: card ? card.color : null };
+    g.total += t.amount;
+    groups.set(key, g);
+  }
+  const rows = [...groups.values()].sort((a, b) => b.total - a.total);
+  const total = rows.reduce((a, g) => a + g.total, 0);
+  $('home-payments').innerHTML = rows.length
+    ? rows.map((g) => barRow(g.label, g.total, total, `${brl.format(g.total)} · ${Math.round((g.total / total) * 100)}%`, '', g.color)).join('')
+      + (state.cards.length ? '' : '<p class="hint">Cadastre seus cartões na página <a href="#cartoes">Cartões</a>.</p>')
+    : '<p class="hint">Sem despesas neste mês.</p>';
+}
+
+function renderCards(list) {
+  const el = $('card-list');
+  if (!state.cards.length) {
+    el.innerHTML = '<section class="panel"><p class="hint">Nenhum cartão cadastrado ainda. Use o formulário para adicionar os cartões que você usa, como Nubank, PicPay, Itaú ou Bradesco.</p></section>';
+    return;
+  }
+  const month = formatMonth(currentMonth());
+  el.innerHTML = state.cards.map((c) => {
+    const color = safeColor(c.color);
+    const txs = list.filter((t) => t.type === 'expense' && t.cardId === c.id).sort(byNewest);
+    const credit = txs.filter((t) => t.method === 'credit').reduce((a, t) => a + t.amount, 0);
+    const debit = txs.filter((t) => t.method === 'debit').reduce((a, t) => a + t.amount, 0);
+    const rules = state.recurring.filter((r) => r.cardId === c.id);
+    let limit = '';
+    if (c.limit > 0) {
+      const { cls, detail } = budgetBar(credit, c.limit);
+      limit = barRow('Crédito usado no mês', credit, c.limit, detail, cls);
+    }
+    return `<article class="panel cc">
+      <div class="cc-face" style="--c:${color};--on:${textOn(color)}">
+        <div class="cc-top"><strong>${escapeHtml(c.name)}</strong><span class="cc-chip" aria-hidden="true"></span></div>
+        <div><small>Gasto em ${month}</small><span class="cc-total">${brl.format(credit + debit)}</span></div>
+      </div>
+      <div class="cc-stats">
+        <div><span>Crédito</span><strong>${brl.format(credit)}</strong></div>
+        <div><span>Débito</span><strong>${brl.format(debit)}</strong></div>
+      </div>
+      ${limit}
+      ${rules.length ? `<div><h4>Contas fixas neste cartão</h4><ul class="simple-list">${rules.map((r) => `<li><div><strong>${escapeHtml(r.desc)}</strong>
+        <small>${brl.format(r.amount)} · todo dia ${r.day} · ${(METHODS[r.method] || '').toLowerCase()}</small></div></li>`).join('')}</ul></div>` : ''}
+      ${txs.length ? `<details><summary>Ver lançamentos do mês (${txs.length})</summary><ul class="tx-list">${txs.map((t) => txItem(t, false)).join('')}</ul></details>` : ''}
+      <div class="form-actions">
+        <button type="button" data-card-edit="${c.id}">Editar</button>
+        <button type="button" class="danger" data-card-del="${c.id}">Excluir</button>
+      </div>
+    </article>`;
+  }).join('');
+}
+
+// Opções de cartão no formulário de despesa e no filtro da lista, preservando a seleção
+function fillCardOptions() {
+  const sel = forms.expense.elements.card;
+  const prev = sel.value;
+  sel.innerHTML = state.cards.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')
+    + '<option value="">Outro / não informar</option>';
+  if (cardById(prev) || prev === '') sel.value = prev;
+
+  const filter = $('expense-pay-filter');
+  const pf = filter.value;
+  filter.innerHTML = '<option value="">Todos os pagamentos</option>'
+    + state.cards.map((c) => `<option value="card:${c.id}">${escapeHtml(c.name)}</option>`).join('')
+    + '<option value="pix">Pix</option><option value="cash">Dinheiro</option>';
+  filter.value = [...filter.options].some((o) => o.value === pf) ? pf : '';
+  updatePaymentFields();
+}
+
+function updatePaymentFields() {
+  const form = forms.expense;
+  const needsCard = usesCard(form.elements.method.value);
+  form.querySelector('.card-wrap').hidden = !(needsCard && state.cards.length);
+  form.querySelector('.card-hint').hidden = !(needsCard && !state.cards.length);
+}
+
+// ---------- Formulário de cartão ----------
+
+const cardForm = $('card-form');
+
+function resetCardForm() {
+  cardForm.reset();
+  cardForm.elements.cardId.value = '';
+  cardForm.querySelector('input[name="cardColor"]').checked = true;
+  $('card-form-title').textContent = 'Novo cartão';
+  cardForm.querySelector('[type="submit"]').textContent = 'Adicionar cartão';
+  cardForm.querySelector('.cancel').hidden = true;
+}
+
+function buildCardForm() {
+  $('card-colors').innerHTML = CARD_COLORS.map((c) => `<label class="swatch-opt">
+      <input type="radio" name="cardColor" value="${c.value}">
+      <span style="--c:${c.value}"></span>${c.name}
+    </label>`).join('');
+  cardForm.querySelector('.cancel').addEventListener('click', resetCardForm);
+  cardForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const el = cardForm.elements;
+    const name = el.cardName.value.trim();
+    if (!name) return;
+    const limit = parseFloat(el.cardLimit.value);
+    const card = {
+      id: el.cardId.value || newId(),
+      name,
+      color: safeColor(el.cardColor.value),
+      limit: limit > 0 ? Math.round(limit * 100) / 100 : null,
+    };
+    const idx = state.cards.findIndex((c) => c.id === card.id);
+    if (idx >= 0) state.cards[idx] = card;
+    else state.cards.push(card);
+    save();
+    resetCardForm();
+    render();
+  });
+  resetCardForm();
+}
+
+function editCard(id) {
+  const c = cardById(id);
+  if (!c) return;
+  const el = cardForm.elements;
+  el.cardId.value = c.id;
+  el.cardName.value = c.name;
+  el.cardLimit.value = c.limit || '';
+  const radio = cardForm.querySelector(`input[name="cardColor"][value="${safeColor(c.color)}"]`);
+  if (radio) radio.checked = true;
+  $('card-form-title').textContent = 'Editar cartão';
+  cardForm.querySelector('[type="submit"]').textContent = 'Salvar';
+  cardForm.querySelector('.cancel').hidden = false;
+  cardForm.scrollIntoView({ block: 'center' });
+  el.cardName.focus({ preventScroll: true });
+}
+
+async function deleteCard(id) {
+  const c = cardById(id);
+  if (!c || !(await confirmAction(`Excluir o cartão "${c.name}"? As despesas continuam salvas, só deixam de apontar para ele.`, 'Excluir'))) return;
+  state.cards = state.cards.filter((x) => x.id !== id);
+  for (const item of [...state.transactions, ...state.recurring]) {
+    if (item.cardId === id) delete item.cardId;
+  }
+  save();
+  if (cardForm.elements.cardId.value === id) resetCardForm();
+  render();
 }
 
 // ---------- Formulários de despesa e receita ----------
@@ -623,6 +825,11 @@ function buildForm(type) {
       <label>Data<input id="${type}-date" name="date" type="date" required></label>
     </div>
     <label>Categoria<select id="${type}-category" name="category">${CATEGORIES[type].map((c) => `<option>${c}</option>`).join('')}</select></label>
+    ${type === 'expense' ? `<div class="row2">
+      <label>Pagamento<select id="expense-method" name="method">${Object.entries(METHODS).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
+      <label class="card-wrap">Cartão<select id="expense-card" name="card"></select></label>
+    </div>
+    <p class="hint card-hint" hidden>Nenhum cartão cadastrado. <a href="#cartoes">Cadastre seus cartões</a> para escolher aqui.</p>` : ''}
     <label class="repeat-wrap">Repetição<select id="${type}-repeat" name="repeat">${repeatOptions}</select></label>
     <label class="installments-wrap" hidden>Número de parcelas<input id="${type}-installments" name="installments" type="number" min="2" max="60" value="2"></label>
     <p class="hint repeat-hint" hidden></p>
@@ -632,6 +839,7 @@ function buildForm(type) {
     </div>`;
   forms[type] = form;
   form.elements.repeat.addEventListener('change', () => updateRepeatFields(type));
+  if (type === 'expense') form.elements.method.addEventListener('change', updatePaymentFields);
   form.querySelector('.cancel').addEventListener('click', () => resetForm(type));
   form.addEventListener('submit', (e) => { e.preventDefault(); submitForm(type); });
 }
@@ -654,6 +862,10 @@ function resetForm(type) {
   form.elements.date.value = currentMonth() === today().slice(0, 7) ? today() : `${currentMonth()}-01`;
   form.querySelector('.repeat-wrap').hidden = false;
   updateRepeatFields(type);
+  if (type === 'expense') {
+    form.elements.method.value = state.cards.length ? 'credit' : 'pix';
+    updatePaymentFields();
+  }
   $(`${type}-form-title`).textContent = type === 'expense' ? 'Nova despesa' : 'Nova receita';
   form.querySelector('[type="submit"]').textContent = 'Adicionar';
   form.querySelector('.cancel').hidden = true;
@@ -673,6 +885,11 @@ function startEdit(id) {
   el.repeat.value = 'none';
   form.querySelector('.repeat-wrap').hidden = true;
   updateRepeatFields(t.type);
+  if (t.type === 'expense') {
+    el.method.value = METHODS[t.method] ? t.method : 'pix';
+    el.card.value = cardById(t.cardId) ? t.cardId : '';
+    updatePaymentFields();
+  }
   $(`${t.type}-form-title`).textContent = t.type === 'expense' ? 'Editar despesa' : 'Editar receita';
   form.querySelector('[type="submit"]').textContent = 'Salvar';
   form.querySelector('.cancel').hidden = false;
@@ -693,6 +910,10 @@ async function submitForm(type) {
     category: el.category.value,
     date: el.date.value,
   };
+  if (type === 'expense') {
+    tx.method = el.method.value;
+    if (usesCard(tx.method) && cardById(el.card.value)) tx.cardId = el.card.value;
+  }
   const mode = editingId ? 'none' : el.repeat.value;
 
   if (editingId) {
@@ -723,7 +944,7 @@ async function submitForm(type) {
   } else if (mode === 'monthly') {
     state.recurring.push({
       id: tx.id, type, desc: tx.desc, amount: tx.amount, category: tx.category,
-      day: Number(tx.date.slice(8, 10)), start: tx.date.slice(0, 7), skipped: [],
+      day: Number(tx.date.slice(8, 10)), start: tx.date.slice(0, 7), skipped: [], ...payment(tx),
     });
     materializeRecurring();
   } else {
@@ -885,9 +1106,9 @@ function csvField(v) {
 
 // Os botões de arquivo são opcionais (a versão publicada no Claude não os tem)
 $('export')?.addEventListener('click', () => {
-  const rows = [['Data', 'Tipo', 'Descrição', 'Categoria', 'Valor']];
+  const rows = [['Data', 'Tipo', 'Descrição', 'Categoria', 'Pagamento', 'Valor']];
   [...state.transactions].sort((a, b) => a.date.localeCompare(b.date)).forEach((t) =>
-    rows.push([t.date, t.type === 'income' ? 'Receita' : 'Despesa', t.desc, t.category, t.amount.toFixed(2).replace('.', ',')]));
+    rows.push([t.date, t.type === 'income' ? 'Receita' : 'Despesa', t.desc, t.category, payInfo(t)?.text || '', t.amount.toFixed(2).replace('.', ',')]));
   // Separador ";" e BOM para abrir corretamente no Excel em português
   download('transacoes.csv', '﻿' + rows.map((r) => r.map(csvField).join(';')).join('\n'), 'text/csv;charset=utf-8');
 });
@@ -944,9 +1165,10 @@ $('paste-data').addEventListener('click', async () => {
 });
 
 $('wipe').addEventListener('click', async () => {
-  if (!(await confirmAction('Apagar todas as transações, lançamentos fixos e orçamentos? Isso não pode ser desfeito.', 'Apagar tudo'))) return;
+  if (!(await confirmAction('Apagar todas as transações, lançamentos fixos, orçamentos e cartões? Isso não pode ser desfeito.', 'Apagar tudo'))) return;
   state = normalize({});
   save();
+  resetCardForm();
   resetForm('expense');
   resetForm('income');
   render();
@@ -955,12 +1177,14 @@ $('wipe').addEventListener('click', async () => {
 // ---------- Eventos gerais ----------
 
 document.addEventListener('click', (e) => {
-  const btn = e.target.closest('button[data-edit], button[data-del], button[data-stop]');
+  const btn = e.target.closest('button[data-edit], button[data-del], button[data-stop], button[data-card-edit], button[data-card-del]');
   if (!btn) return;
-  const { edit, del, stop } = btn.dataset;
+  const { edit, del, stop, cardEdit, cardDel } = btn.dataset;
   if (edit) startEdit(edit);
   else if (del) deleteTx(del);
   else if (stop) stopRecurring(stop);
+  else if (cardEdit) editCard(cardEdit);
+  else if (cardDel) deleteCard(cardDel);
 });
 
 $('budgets').addEventListener('change', (e) => {
@@ -995,6 +1219,7 @@ $('month').addEventListener('change', () => { if (currentMonth()) changeMonth(cu
 $('prev-month').addEventListener('click', () => changeMonth(addMonths(currentMonth(), -1)));
 $('next-month').addEventListener('click', () => changeMonth(addMonths(currentMonth(), 1)));
 $('expense-search').addEventListener('input', () => renderTxList('expense'));
+$('expense-pay-filter').addEventListener('change', () => renderTxList('expense'));
 $('income-search').addEventListener('input', () => renderTxList('income'));
 window.addEventListener('hashchange', () => showTab());
 
@@ -1008,6 +1233,8 @@ window.addEventListener('resize', () => {
 
 buildForm('expense');
 buildForm('income');
+buildCardForm();
+fillCardOptions();
 buildSettings();
 applySettings();
 syncSettingsForm();

@@ -14,9 +14,10 @@ Para levar os dados entre aparelhos ou versões, use Personalizar → Copiar dad
 
 ## Páginas
 
-- **Início**: painel com receitas, despesas e saldos comparados ao mês anterior, gráfico de receitas × despesas (6 ou 12 meses), evolução do saldo acumulado, ritmo de gastos do mês contra o mês anterior, tendência por categoria, gastos por dia, orçamentos e últimas transações
-- **Despesas**: cadastro (avulsa, parcelada ou fixa mensal), lista com busca, gastos por categoria e orçamentos mensais com alerta em 80% e acima do limite
+- **Início**: painel com receitas, despesas e saldos comparados ao mês anterior, gráfico de receitas × despesas (6 ou 12 meses), evolução do saldo acumulado, ritmo de gastos do mês contra o mês anterior, tendência por categoria, gastos por dia, gastos por cartão e forma de pagamento, orçamentos e últimas transações
+- **Despesas**: cadastro (avulsa, parcelada ou fixa mensal) com forma de pagamento (crédito, débito, Pix ou dinheiro) e cartão, lista com busca e filtro por cartão, gastos por categoria e orçamentos mensais com alerta em 80% e acima do limite
 - **Receitas**: cadastro (avulsa ou fixa mensal), lista com busca e receitas por origem
+- **Cartões**: cadastro dos cartões (nome, cor e limite), gasto do mês no crédito e no débito de cada um, uso do limite, contas fixas e lançamentos por cartão
 - **Personalizar**: nome no topo, cor principal, tema claro/escuro/automático, barra de navegação no topo ou embaixo, tamanho do texto, exportação CSV, backup e restauração
 
 ## Estrutura
