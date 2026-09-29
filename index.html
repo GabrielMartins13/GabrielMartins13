@@ -15,6 +15,30 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- Login (só aparece quando o Firebase está configurado) -->
+  <div id="auth" class="auth" hidden>
+    <div class="auth-box">
+      <div class="auth-brand">
+        <img src="img/logo-128.png" alt="" width="72" height="72">
+        <h1>FYNA</h1>
+        <p class="hint" id="auth-subtitle">Entre para ver o seu controle financeiro.</p>
+      </div>
+      <p id="auth-loading" class="hint auth-loading">Carregando…</p>
+      <div id="auth-panel" hidden>
+        <form id="auth-form" novalidate>
+          <label>E-mail<input id="auth-email" name="email" type="email" autocomplete="email" inputmode="email" required></label>
+          <label>Senha<input id="auth-password" name="password" type="password" autocomplete="current-password" minlength="6" required></label>
+          <p id="auth-message" class="auth-message" role="alert" hidden></p>
+          <button type="submit" class="primary" id="auth-submit">Entrar</button>
+        </form>
+        <div class="auth-links">
+          <button type="button" class="link" id="auth-toggle">Não tem conta? Criar conta</button>
+          <button type="button" class="link" id="auth-reset">Esqueci minha senha</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <header class="topbar">
     <div class="brand">
       <img src="img/logo-128.png" alt="" width="40" height="40">
@@ -245,6 +269,15 @@
     <section class="page" id="page-personalizar" aria-labelledby="t-personalizar" hidden>
       <h2 class="page-title" id="t-personalizar">Personalizar</h2>
       <div class="settings">
+        <section class="panel settings-panel" id="account" hidden>
+          <h3>Conta</h3>
+          <div class="setting">
+            <p class="account-line">Conectado como <strong id="account-email"></strong></p>
+            <p class="hint" id="sync-status" aria-live="polite"></p>
+          </div>
+          <div><button type="button" id="logout">Sair da conta</button></div>
+        </section>
+
         <section class="panel settings-panel">
           <h3>Aparência</h3>
 
@@ -308,6 +341,7 @@
     </section>
   </main>
 
+  <script src="firebase-config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

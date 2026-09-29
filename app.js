@@ -56,13 +56,21 @@ function normalize(data) {
   };
 }
 
+// Com login, as aparências ficam separadas por conta (settingsKey muda ao entrar)
+let settingsKey = SETTINGS_KEY;
 let state = normalize(readJSON(STORAGE_KEY) || {});
-const storedSettings = readJSON(SETTINGS_KEY) || {};
-// Até a versão 2 a barra ficava no topo por padrão; quem não escolheu passa a ter a barra embaixo
-if (storedSettings.version !== 2) delete storedSettings.nav;
-let settings = { ...DEFAULT_SETTINGS, ...storedSettings, version: 2 };
+
+// Usa as primeiras aparências salvas entre as chaves indicadas
+function loadSettings(...keys) {
+  const stored = keys.map(readJSON).find(Boolean) || {};
+  // Até a versão 2 a barra ficava no topo por padrão; quem não escolheu passa a ter a barra embaixo
+  if (stored.version !== 2) delete stored.nav;
+  return { ...DEFAULT_SETTINGS, ...stored, version: 2 };
+}
+let settings = loadSettings(SETTINGS_KEY);
 
 function save() {
+  if (cloud.user) return saveAccount();
   if (!writeJSON(STORAGE_KEY, state)) notify('Não foi possível salvar os dados neste navegador.');
 }
 
@@ -1071,20 +1079,20 @@ function buildSettings() {
     else if (t.id === 'set-color') settings.accent = t.value;
     else if (['accent', 'theme', 'nav', 'fontSize'].includes(t.name)) settings[t.name] = t.value;
     else return;
-    writeJSON(SETTINGS_KEY, settings);
+    writeJSON(settingsKey, settings);
     applySettings();
     if (t.id === 'set-color') syncSettingsForm();
   });
 
   document.querySelectorAll('input[name="period"]').forEach((r) => r.addEventListener('change', () => {
     settings.period = Number(r.value);
-    writeJSON(SETTINGS_KEY, settings);
+    writeJSON(settingsKey, settings);
     renderCharts();
   }));
 
   $('reset-settings').addEventListener('click', () => {
     settings = { ...DEFAULT_SETTINGS, period: settings.period };
-    writeJSON(SETTINGS_KEY, settings);
+    writeJSON(settingsKey, settings);
     applySettings();
     syncSettingsForm();
   });
@@ -1229,18 +1237,309 @@ window.addEventListener('resize', () => {
   resizeTimer = setTimeout(renderCharts, 150);
 });
 
+// ---------- Conta (login na nuvem com Firebase) ----------
+
+const FIREBASE_SDK = 'https://www.gstatic.com/firebasejs/10.14.1/';
+const cloud = {
+  config: window.FYNA_FIREBASE?.apiKey ? window.FYNA_FIREBASE : null,
+  user: null,
+  doc: null, // users/{uid} no Firestore: { state: JSON, updatedAt: ms }
+  cacheKey: null, // cópia local da conta, para abrir rápido e guardar o que ainda não subiu
+  updatedAt: 0,
+  dirty: false, // há alterações que ainda não chegaram à nuvem
+  timer: null,
+  unsubscribe: null,
+};
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error(`Falha ao carregar ${src}`));
+    document.head.append(s);
+  });
+}
+
+async function loadFirebase() {
+  if (!window.firebase) {
+    await loadScript(`${FIREBASE_SDK}firebase-app-compat.js`);
+    await Promise.all(['auth', 'firestore'].map((m) => loadScript(`${FIREBASE_SDK}firebase-${m}-compat.js`)));
+  }
+  if (!firebase.apps.length) firebase.initializeApp(cloud.config);
+  firebase.auth().languageCode = 'pt';
+}
+
+const writeCache = () => writeJSON(cloud.cacheKey, { state, updatedAt: cloud.updatedAt, dirty: cloud.dirty });
+
+function setSync(status) {
+  $('sync-status').textContent = {
+    saved: 'Tudo salvo na nuvem.',
+    saving: 'Salvando na nuvem…',
+    offline: 'Sem conexão. As alterações ficam neste aparelho e são enviadas quando a internet voltar.',
+  }[status];
+}
+
+function saveAccount() {
+  cloud.updatedAt = Date.now();
+  cloud.dirty = true;
+  writeCache();
+  setSync('saving');
+  clearTimeout(cloud.timer);
+  cloud.timer = setTimeout(pushAccount, 800);
+}
+
+async function pushAccount() {
+  clearTimeout(cloud.timer);
+  cloud.timer = null;
+  if (!cloud.doc || !cloud.dirty) return;
+  const stamp = cloud.updatedAt;
+  try {
+    await cloud.doc.set({ state: JSON.stringify(state), updatedAt: stamp });
+    // Só marca como enviado se nada mudou enquanto subia
+    if (cloud.updatedAt === stamp) {
+      cloud.dirty = false;
+      writeCache();
+    }
+    setSync(cloud.dirty ? 'saving' : 'saved');
+  } catch {
+    setSync('offline');
+  }
+}
+
+function parseRemote(data) {
+  try {
+    return normalize(JSON.parse(data.state));
+  } catch {
+    return null;
+  }
+}
+
+// Carrega os dados da conta: nuvem, ou a cópia local se ela tiver alterações mais novas que ainda não subiram
+async function openAccount(user) {
+  cloud.user = user;
+  cloud.cacheKey = `controle-financeiro:conta:${user.uid}`;
+  cloud.doc = firebase.firestore().collection('users').doc(user.uid);
+  settingsKey = `${SETTINGS_KEY}:${user.uid}`;
+  settings = loadSettings(settingsKey, SETTINGS_KEY);
+
+  const cache = readJSON(cloud.cacheKey);
+  let remote = null;
+  let online = true;
+  try {
+    const snap = await cloud.doc.get();
+    if (snap.exists) remote = snap.data();
+  } catch {
+    online = false;
+  }
+
+  let isNew = false;
+  if (cache?.dirty && cache.updatedAt > (remote?.updatedAt || 0)) {
+    state = normalize(cache.state);
+    cloud.updatedAt = cache.updatedAt;
+    cloud.dirty = true;
+  } else if (remote && parseRemote(remote)) {
+    state = parseRemote(remote);
+    cloud.updatedAt = remote.updatedAt;
+    cloud.dirty = false;
+  } else if (cache) {
+    state = normalize(cache.state);
+    cloud.updatedAt = cache.updatedAt;
+    cloud.dirty = !!cache.dirty || online;
+  } else {
+    state = normalize({});
+    cloud.updatedAt = 0;
+    cloud.dirty = false;
+    isNew = online;
+  }
+  writeCache();
+
+  // Alterações feitas em outro aparelho chegam aqui na hora
+  cloud.unsubscribe = cloud.doc.onSnapshot((snap) => {
+    if (!snap.exists || snap.metadata.hasPendingWrites || cloud.dirty) return;
+    const data = snap.data();
+    if (!(data.updatedAt > cloud.updatedAt)) return;
+    const next = parseRemote(data);
+    if (!next) return;
+    state = next;
+    cloud.updatedAt = data.updatedAt;
+    writeCache();
+    materializeRecurring();
+    render();
+  }, () => {});
+
+  $('account').hidden = false;
+  $('account-email').textContent = user.email;
+  $('data-hint').textContent = 'Seus dados ficam salvos na sua conta e aparecem em qualquer aparelho em que você entrar.';
+  if (cloud.dirty) pushAccount();
+  else setSync(online ? 'saved' : 'offline');
+  return isNew;
+}
+
+// Conta nova num aparelho que já tinha dados de antes do login: oferece levar para a conta
+async function offerLegacyImport() {
+  const legacy = normalize(readJSON(STORAGE_KEY) || {});
+  if (!legacy.transactions.length) return save();
+  const choice = await ask(
+    `Encontramos ${legacy.transactions.length} lançamentos salvos neste aparelho de antes do login. Quer levá-los para a sua conta (${cloud.user.email})?`,
+    [{ label: 'Não, começar do zero', value: 'no' }, { label: 'Sim, levar para a conta', value: 'yes', primary: true }],
+  );
+  if (choice === 'yes') {
+    state = legacy;
+    try { localStorage.removeItem(STORAGE_KEY); } catch { /* sem armazenamento */ }
+    materializeRecurring();
+    resetForm('expense');
+    resetForm('income');
+    render();
+  }
+  save();
+}
+
+async function logout() {
+  if (cloud.dirty) {
+    setSync('saving');
+    await Promise.race([pushAccount(), new Promise((r) => setTimeout(r, 5000))]);
+  }
+  if (cloud.dirty && !(await confirmAction('Algumas alterações ainda não chegaram à nuvem porque o aparelho está sem internet. Se sair agora, elas serão perdidas. Sair mesmo assim?', 'Sair'))) return;
+  cloud.unsubscribe?.();
+  // Não deixa os dados da conta guardados no aparelho depois de sair
+  try { localStorage.removeItem(cloud.cacheKey); } catch { /* sem armazenamento */ }
+  await firebase.auth().signOut();
+  location.reload();
+}
+
+// ---------- Tela de login ----------
+
+let authMode = 'login';
+
+function showAuth(loading) {
+  document.body.classList.add('locked');
+  $('auth').hidden = false;
+  $('auth-loading').hidden = !loading;
+  $('auth-panel').hidden = loading;
+}
+
+function hideAuth() {
+  document.body.classList.remove('locked');
+  $('auth').hidden = true;
+}
+
+function authMessage(text, ok = false) {
+  const el = $('auth-message');
+  el.textContent = text;
+  el.classList.toggle('ok', ok);
+  el.hidden = !text;
+}
+
+function setAuthMode(mode) {
+  authMode = mode;
+  const signup = mode === 'signup';
+  $('auth-subtitle').textContent = signup ? 'Crie sua conta. Seus dados ficam separados dos de qualquer outra pessoa.' : 'Entre para ver o seu controle financeiro.';
+  $('auth-submit').textContent = signup ? 'Criar conta' : 'Entrar';
+  $('auth-toggle').textContent = signup ? 'Já tem conta? Entrar' : 'Não tem conta? Criar conta';
+  $('auth-reset').hidden = signup;
+  $('auth-password').autocomplete = signup ? 'new-password' : 'current-password';
+  authMessage('');
+}
+
+function authErrorText(code) {
+  return {
+    'auth/invalid-credential': 'E-mail ou senha incorretos.',
+    'auth/invalid-login-credentials': 'E-mail ou senha incorretos.',
+    'auth/wrong-password': 'E-mail ou senha incorretos.',
+    'auth/user-not-found': 'Não existe conta com esse e-mail. Toque em "Criar conta".',
+    'auth/email-already-in-use': 'Já existe uma conta com esse e-mail. Toque em "Entrar".',
+    'auth/weak-password': 'A senha precisa ter pelo menos 6 caracteres.',
+    'auth/invalid-email': 'Digite um e-mail válido.',
+    'auth/missing-password': 'Digite a senha.',
+    'auth/too-many-requests': 'Muitas tentativas seguidas. Espere alguns minutos e tente de novo.',
+    'auth/network-request-failed': 'Sem conexão com a internet. Verifique e tente de novo.',
+  }[code] || `Não foi possível continuar (${code || 'erro desconhecido'}).`;
+}
+
+$('auth-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = $('auth-email').value.trim();
+  const password = $('auth-password').value;
+  if (!email) return authMessage('Digite seu e-mail.');
+  if (password.length < 6) return authMessage('A senha precisa ter pelo menos 6 caracteres.');
+  const btn = $('auth-submit');
+  btn.disabled = true;
+  authMessage('');
+  try {
+    const auth = firebase.auth();
+    if (authMode === 'signup') await auth.createUserWithEmailAndPassword(email, password);
+    else await auth.signInWithEmailAndPassword(email, password);
+  } catch (err) {
+    authMessage(authErrorText(err.code));
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$('auth-toggle').addEventListener('click', () => setAuthMode(authMode === 'login' ? 'signup' : 'login'));
+
+$('auth-reset').addEventListener('click', async () => {
+  const email = $('auth-email').value.trim();
+  if (!email) return authMessage('Digite seu e-mail acima e toque de novo em "Esqueci minha senha".');
+  try {
+    await firebase.auth().sendPasswordResetEmail(email);
+    authMessage(`Se existir uma conta com ${email}, enviamos um link para criar uma nova senha. Confira também o spam.`, true);
+  } catch (err) {
+    authMessage(authErrorText(err.code));
+  }
+});
+
+$('logout').addEventListener('click', logout);
+window.addEventListener('online', () => { if (cloud.dirty) pushAccount(); });
+
 // ---------- Início ----------
 
-buildForm('expense');
-buildForm('income');
-buildCardForm();
-fillCardOptions();
-buildSettings();
-applySettings();
-syncSettingsForm();
-materializeRecurring();
-$('month').value = today().slice(0, 7);
-resetForm('expense');
-resetForm('income');
-showTab();
-render();
+let uiStarted = false;
+
+function startApp() {
+  if (!uiStarted) {
+    uiStarted = true;
+    buildForm('expense');
+    buildForm('income');
+    buildCardForm();
+    buildSettings();
+    $('month').value = today().slice(0, 7);
+  }
+  applySettings();
+  syncSettingsForm();
+  materializeRecurring();
+  fillCardOptions();
+  resetForm('expense');
+  resetForm('income');
+  resetCardForm();
+  showTab();
+  render();
+}
+
+async function boot() {
+  // Sem Firebase configurado: app sem login, dados só neste aparelho
+  if (!cloud.config) return startApp();
+
+  showAuth(true);
+  try {
+    await loadFirebase();
+  } catch {
+    $('auth-loading').textContent = 'Não foi possível carregar o login. Verifique a internet e abra o app de novo.';
+    return;
+  }
+  setAuthMode('login');
+  firebase.auth().onAuthStateChanged(async (user) => {
+    if (!user) {
+      showAuth(false);
+      return;
+    }
+    showAuth(true);
+    const isNew = await openAccount(user);
+    startApp();
+    hideAuth();
+    if (isNew) offerLegacyImport();
+  });
+}
+
+boot();
