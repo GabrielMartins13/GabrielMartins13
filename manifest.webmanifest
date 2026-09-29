@@ -1,6 +1,6 @@
 {
-  "name": "Controle Financeiro",
-  "short_name": "Finanças",
+  "name": "FYNA",
+  "short_name": "FYNA",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

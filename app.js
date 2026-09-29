@@ -2,7 +2,7 @@
 
 const STORAGE_KEY = 'controle-financeiro:v1';
 const SETTINGS_KEY = 'controle-financeiro:aparencia';
-const DEFAULT_NAME = 'Controle Financeiro';
+const DEFAULT_NAME = 'FYNA';
 const TABS = ['inicio', 'despesas', 'receitas', 'personalizar'];
 const TYPE_TAB = { expense: 'despesas', income: 'receitas' };
 
@@ -906,7 +906,7 @@ async function importData(text, source) {
   const valid = data && Array.isArray(data.transactions) && data.transactions.every((t) =>
     t && typeof t.id === 'string' && ['income', 'expense'].includes(t.type) && typeof t.desc === 'string' &&
     typeof t.amount === 'number' && typeof t.category === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(t.date));
-  if (!valid) return notify(`${source} não contém dados válidos do Controle Financeiro.`);
+  if (!valid) return notify(`${source} não contém dados válidos do FYNA.`);
   if (!(await confirmAction(`Substituir os dados atuais por ${data.transactions.length} transações?`, 'Substituir'))) return;
   state = normalize(data);
   materializeRecurring();

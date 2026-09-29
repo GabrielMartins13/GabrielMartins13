@@ -1,6 +1,6 @@
-# Controle Financeiro
+# FYNA
 
-Aplicativo web simples para controlar receitas e despesas pessoais. Não precisa de servidor nem de instalação: os dados ficam salvos no próprio navegador (`localStorage`).
+Aplicativo web de controle financeiro pessoal: receitas, despesas, orçamentos e gráficos de evolução. Não precisa de servidor nem de instalação: os dados ficam salvos no próprio navegador (`localStorage`).
 
 ## Como usar
 
