@@ -8,6 +8,10 @@ Acesse pelo GitHub Pages: https://gabrielmartins13.github.io/GabrielMartins13/
 
 Ou abra o arquivo `index.html` direto no navegador.
 
+No iPhone, abra o link no Safari e use Compartilhar → Adicionar à Tela de Início: o app ganha o ícone com a logo e abre em tela cheia.
+
+Para levar os dados entre aparelhos ou versões, use Personalizar → Copiar dados e, no outro lugar, Colar dados.
+
 ## Páginas
 
 - **Início**: painel com receitas, despesas e saldos comparados ao mês anterior, gráfico de receitas × despesas (6 ou 12 meses), evolução do saldo acumulado, ritmo de gastos do mês contra o mês anterior, tendência por categoria, gastos por dia, orçamentos e últimas transações
@@ -21,3 +25,4 @@ Ou abra o arquivo `index.html` direto no navegador.
 - `style.css` — estilos
 - `app.js` — lógica e armazenamento
 - `img/` — logo do app (topo, ícone da aba e da tela inicial do celular)
+- `manifest.webmanifest` — nome e ícones para instalar o app no celular

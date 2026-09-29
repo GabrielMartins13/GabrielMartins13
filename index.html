@@ -6,7 +6,12 @@
   <title>Controle Financeiro</title>
   <link rel="icon" type="image/png" sizes="32x32" href="img/logo-32.png">
   <link rel="apple-touch-icon" href="img/logo-180.png">
-  <meta name="theme-color" content="#0a0f1e">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Finanças">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1b2129" media="(prefers-color-scheme: dark)">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -248,6 +253,13 @@
             <button type="button" id="export">Exportar CSV</button>
             <button type="button" id="backup">Baixar backup (JSON)</button>
             <label class="file-btn">Restaurar backup<input type="file" id="restore" accept="application/json" hidden></label>
+          </div>
+          <div class="setting">
+            <p class="hint">Para levar seus lançamentos para outro aparelho ou outra versão do app: toque em <strong>Copiar dados</strong> aqui e em <strong>Colar dados</strong> lá.</p>
+            <div class="tools">
+              <button type="button" id="copy-data">Copiar dados</button>
+              <button type="button" id="paste-data">Colar dados</button>
+            </div>
           </div>
           <div><button type="button" id="wipe" class="danger">Apagar todos os dados</button></div>
         </section>

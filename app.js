@@ -57,7 +57,8 @@ function save() {
 
 // Diálogo próprio no lugar de confirm()/alert(), que nem todo ambiente exibe.
 // buttons: [{ label, value, primary? }]; resolve com o value clicado ou null.
-function ask(message, buttons = [{ label: 'OK', value: true, primary: true }]) {
+// Com field ({ value, readOnly, placeholder }) mostra uma caixa de texto e resolve com o texto dela.
+function ask(message, buttons = [{ label: 'OK', value: true, primary: true }], field = null) {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'modal';
@@ -65,7 +66,20 @@ function ask(message, buttons = [{ label: 'OK', value: true, primary: true }]) {
       <p id="modal-msg"></p><div class="modal-actions"></div></div>`;
     overlay.querySelector('p').textContent = message;
     const actions = overlay.querySelector('.modal-actions');
-    const close = (value) => { overlay.remove(); document.removeEventListener('keydown', onKey); resolve(value); };
+    let textarea = null;
+    if (field) {
+      textarea = document.createElement('textarea');
+      textarea.value = field.value || '';
+      textarea.readOnly = !!field.readOnly;
+      textarea.placeholder = field.placeholder || '';
+      textarea.setAttribute('aria-labelledby', 'modal-msg');
+      actions.before(textarea);
+    }
+    const close = (value) => {
+      overlay.remove();
+      document.removeEventListener('keydown', onKey);
+      resolve(textarea && value != null ? textarea.value : value);
+    };
     const onKey = (e) => { if (e.key === 'Escape') close(null); };
     for (const b of buttons) {
       const btn = document.createElement('button');
@@ -78,7 +92,12 @@ function ask(message, buttons = [{ label: 'OK', value: true, primary: true }]) {
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
     document.addEventListener('keydown', onKey);
     document.body.append(overlay);
-    actions.querySelector('button').focus(); // o primeiro botão é sempre o mais seguro (Cancelar/OK)
+    if (textarea) {
+      textarea.focus();
+      if (textarea.readOnly) textarea.select();
+    } else {
+      actions.querySelector('button').focus(); // o primeiro botão é sempre o mais seguro (Cancelar/OK)
+    }
   });
 }
 
@@ -876,24 +895,52 @@ $('export')?.addEventListener('click', () => {
 $('backup')?.addEventListener('click', () =>
   download(`backup-financeiro-${today()}.json`, JSON.stringify(state, null, 2), 'application/json'));
 
+// Substitui os dados atuais pelos de um backup (arquivo ou texto colado), depois de confirmar
+async function importData(text, source) {
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = null;
+  }
+  const valid = data && Array.isArray(data.transactions) && data.transactions.every((t) =>
+    t && typeof t.id === 'string' && ['income', 'expense'].includes(t.type) && typeof t.desc === 'string' &&
+    typeof t.amount === 'number' && typeof t.category === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(t.date));
+  if (!valid) return notify(`${source} não contém dados válidos do Controle Financeiro.`);
+  if (!(await confirmAction(`Substituir os dados atuais por ${data.transactions.length} transações?`, 'Substituir'))) return;
+  state = normalize(data);
+  materializeRecurring();
+  save();
+  resetForm('expense');
+  resetForm('income');
+  render();
+  notify(`${data.transactions.length} transações importadas.`);
+}
+
 $('restore')?.addEventListener('change', async (e) => {
   const file = e.target.files[0];
   e.target.value = '';
-  if (!file) return;
+  if (file) importData(await file.text(), 'Este arquivo');
+});
+
+$('copy-data').addEventListener('click', async () => {
+  const text = JSON.stringify(state);
   try {
-    const data = JSON.parse(await file.text());
-    const valid = Array.isArray(data.transactions) && data.transactions.every((t) =>
-      t && typeof t.id === 'string' && ['income', 'expense'].includes(t.type) && typeof t.desc === 'string' &&
-      typeof t.amount === 'number' && typeof t.category === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(t.date));
-    if (!valid) throw new Error('formato inválido');
-    if (!(await confirmAction(`Substituir os dados atuais por ${data.transactions.length} transações do backup?`, 'Substituir'))) return;
-    state = normalize(data);
-    materializeRecurring();
-    save();
-    render();
+    await navigator.clipboard.writeText(text);
+    notify('Dados copiados. Na outra versão do app, abra Personalizar e toque em Colar dados.');
   } catch {
-    notify('Este arquivo não é um backup válido do Controle Financeiro.');
+    // Sem acesso à área de transferência: mostra o texto já selecionado para copiar à mão
+    ask('Copie todo o texto abaixo (toque e segure, Selecionar tudo, Copiar):', [{ label: 'Fechar', value: true, primary: true }],
+      { value: text, readOnly: true });
   }
+});
+
+$('paste-data').addEventListener('click', async () => {
+  const text = await ask('Cole abaixo os dados copiados do app:', [
+    { label: 'Cancelar', value: null },
+    { label: 'Importar', value: true, primary: true },
+  ], { placeholder: 'Cole aqui…' });
+  if (text?.trim()) importData(text.trim(), 'O texto colado');
 });
 
 $('wipe').addEventListener('click', async () => {

@@ -309,6 +309,11 @@ form label input, form label select { color: var(--text); width: 100%; }
   padding: 20px; width: min(420px, 100%); display: grid; gap: 16px;
 }
 .modal-box p { margin: 0; }
+.modal-box textarea {
+  width: 100%; min-height: 140px; resize: vertical; padding: 8px 10px;
+  font: .8rem ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+}
 .modal-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 
 @media (max-width: 760px) {
