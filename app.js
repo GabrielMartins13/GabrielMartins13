@@ -1402,8 +1402,11 @@ async function logout() {
   }
   if (cloud.dirty && !(await confirmAction('Algumas alterações ainda não chegaram à nuvem porque o aparelho está sem internet. Se sair agora, elas serão perdidas. Sair mesmo assim?', 'Sair'))) return;
   cloud.unsubscribe?.();
-  // Não deixa os dados da conta guardados no aparelho depois de sair
-  try { localStorage.removeItem(cloud.cacheKey); } catch { /* sem armazenamento */ }
+  // Não deixa os dados da conta nem a trava de biometria guardados no aparelho depois de sair
+  try {
+    localStorage.removeItem(cloud.cacheKey);
+    localStorage.removeItem(bio.key(cloud.user.uid));
+  } catch { /* sem armazenamento */ }
   await firebase.auth().signOut();
   location.reload();
 }
@@ -1417,6 +1420,7 @@ function showAuth(loading) {
   $('auth').hidden = false;
   $('auth-loading').hidden = !loading;
   $('auth-panel').hidden = loading;
+  $('auth-lock').hidden = true;
 }
 
 function hideAuth() {
@@ -1466,11 +1470,14 @@ $('auth-form').addEventListener('submit', async (e) => {
   const btn = $('auth-submit');
   btn.disabled = true;
   authMessage('');
+  // Acabou de digitar a senha: não pede biometria nesta entrada
+  bio.skipNextLock = true;
   try {
     const auth = firebase.auth();
     if (authMode === 'signup') await auth.createUserWithEmailAndPassword(email, password);
     else await auth.signInWithEmailAndPassword(email, password);
   } catch (err) {
+    bio.skipNextLock = false;
     authMessage(authErrorText(err.code));
   } finally {
     btn.disabled = false;
@@ -1487,6 +1494,156 @@ $('auth-reset').addEventListener('click', async () => {
     authMessage(`Se existir uma conta com ${email}, enviamos um link para criar uma nova senha. Confira também o spam.`, true);
   } catch (err) {
     authMessage(authErrorText(err.code));
+  }
+});
+
+// ---------- Biometria (Face ID / digital) ----------
+// Usa o autenticador do próprio aparelho (WebAuthn) como trava do app, igual aos apps de banco.
+// A conta continua protegida pela senha; a biometria só libera a sessão já aberta neste aparelho.
+
+const bio = {
+  key: (uid) => `controle-financeiro:bio:${uid}`,
+  lockAfterMs: 2 * 60 * 1000, // volta a bloquear se o app ficar mais que isso em segundo plano
+  hiddenAt: 0,
+  skipNextLock: false,
+  resolveUnlock: null, // enquanto existe, o app está bloqueado
+  busy: false,
+};
+
+const toB64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const fromB64url = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
+const randomChallenge = () => crypto.getRandomValues(new Uint8Array(32));
+const bioCredential = (uid) => readJSON(bio.key(uid))?.id || null;
+
+async function bioAvailable() {
+  try {
+    return !!window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+  } catch {
+    return false;
+  }
+}
+
+async function enableBio(user) {
+  const cred = await navigator.credentials.create({
+    publicKey: {
+      challenge: randomChallenge(),
+      rp: { name: 'FYNA' },
+      user: { id: new TextEncoder().encode(user.uid), name: user.email, displayName: user.email },
+      pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+      authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'discouraged' },
+      attestation: 'none',
+      timeout: 60000,
+    },
+  });
+  writeJSON(bio.key(user.uid), { id: toB64url(cred.rawId) });
+}
+
+// Pede a biometria; só aceita se o aparelho confirmou a pessoa (flag UV dos dados do autenticador)
+async function verifyBio(uid) {
+  const assertion = await navigator.credentials.get({
+    publicKey: {
+      challenge: randomChallenge(),
+      allowCredentials: [{ type: 'public-key', id: fromB64url(bioCredential(uid)), transports: ['internal'] }],
+      userVerification: 'required',
+      timeout: 60000,
+    },
+  });
+  const flags = new Uint8Array(assertion.response.authenticatorData)[32];
+  if (!(flags & 0x04)) throw Object.assign(new Error('sem verificação'), { name: 'NotVerified' });
+}
+
+function lockMessage(text) {
+  $('lock-message').textContent = text;
+  $('lock-message').hidden = !text;
+}
+
+// Mostra a tela de bloqueio; resolve quando a biometria confirmar
+function lockApp(user) {
+  if (bio.resolveUnlock) return Promise.resolve();
+  return new Promise((resolve) => {
+    bio.resolveUnlock = resolve;
+    bio.lockUser = user;
+    document.body.classList.add('locked');
+    $('auth').hidden = false;
+    $('auth-loading').hidden = true;
+    $('auth-panel').hidden = true;
+    $('auth-lock').hidden = false;
+    $('auth-subtitle').textContent = 'O FYNA está bloqueado.';
+    $('lock-email').textContent = user.email;
+    lockMessage('');
+    tryUnlock();
+  });
+}
+
+async function tryUnlock() {
+  if (bio.busy || !bio.resolveUnlock) return;
+  bio.busy = true;
+  lockMessage('');
+  try {
+    await verifyBio(bio.lockUser.uid);
+    $('auth-lock').hidden = true;
+    const resolve = bio.resolveUnlock;
+    bio.resolveUnlock = null;
+    resolve();
+  } catch (err) {
+    lockMessage(err.name === 'NotAllowedError' || err.name === 'NotVerified'
+      ? 'Biometria não confirmada. Toque em "Desbloquear" para tentar de novo ou entre com a senha.'
+      : 'Não foi possível usar a biometria neste aparelho. Entre com a senha.');
+  } finally {
+    bio.busy = false;
+  }
+}
+
+$('lock-unlock').addEventListener('click', tryUnlock);
+
+$('lock-password').addEventListener('click', async () => {
+  const email = bio.lockUser?.email || '';
+  bio.resolveUnlock = null;
+  cloud.unsubscribe?.();
+  cloud.user = null;
+  await firebase.auth().signOut();
+  setAuthMode('login');
+  $('auth-email').value = email;
+  showAuth(false);
+  $('auth-password').focus();
+});
+
+// Volta a bloquear quando o app fica um tempo em segundo plano
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    bio.hiddenAt = Date.now();
+    return;
+  }
+  const away = bio.hiddenAt && Date.now() - bio.hiddenAt > bio.lockAfterMs;
+  bio.hiddenAt = 0;
+  if (away && cloud.user && bioCredential(cloud.user.uid)) lockApp(cloud.user).then(hideAuth);
+});
+
+async function syncBioToggle() {
+  const toggle = $('bio-toggle');
+  const available = await bioAvailable();
+  toggle.disabled = !available;
+  toggle.checked = available && !!bioCredential(cloud.user.uid);
+  if (!available) $('bio-hint').textContent = 'Este aparelho ou navegador não oferece Face ID ou digital para sites.';
+}
+
+$('bio-toggle').addEventListener('change', async (e) => {
+  const toggle = e.target;
+  const user = cloud.user;
+  if (!user) return;
+  if (!toggle.checked) {
+    try { localStorage.removeItem(bio.key(user.uid)); } catch { /* sem armazenamento */ }
+    return;
+  }
+  toggle.disabled = true;
+  try {
+    await enableBio(user);
+    notify('Pronto! Ao abrir o FYNA neste aparelho, ele vai pedir Face ID ou digital.');
+  } catch (err) {
+    toggle.checked = false;
+    if (err.name !== 'NotAllowedError') notify('Não foi possível ativar a biometria neste aparelho.');
+  } finally {
+    toggle.disabled = false;
   }
 });
 
@@ -1534,10 +1691,13 @@ async function boot() {
       showAuth(false);
       return;
     }
+    if (bio.skipNextLock) bio.skipNextLock = false;
+    else if (bioCredential(user.uid)) await lockApp(user);
     showAuth(true);
     const isNew = await openAccount(user);
     startApp();
     hideAuth();
+    syncBioToggle();
     if (isNew) offerLegacyImport();
   });
 }

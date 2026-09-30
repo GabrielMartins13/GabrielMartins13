@@ -24,6 +24,15 @@
         <p class="hint" id="auth-subtitle">Entre para ver o seu controle financeiro.</p>
       </div>
       <p id="auth-loading" class="hint auth-loading">Carregando…</p>
+      <div id="auth-lock" class="auth-lock" hidden>
+        <p class="hint">Conta: <strong id="lock-email"></strong></p>
+        <button type="button" class="primary" id="lock-unlock">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M9 9v1M15 9v1M12 9v4h-1M9 16c1.7 1.3 4.3 1.3 6 0"/></svg>
+          Desbloquear
+        </button>
+        <p id="lock-message" class="auth-message" role="alert" hidden></p>
+        <div class="auth-links"><button type="button" class="link" id="lock-password">Entrar com senha</button></div>
+      </div>
       <div id="auth-panel" hidden>
         <form id="auth-form" novalidate>
           <label>E-mail<input id="auth-email" name="email" type="email" autocomplete="email" inputmode="email" required></label>
@@ -274,6 +283,13 @@
           <div class="setting">
             <p class="account-line">Conectado como <strong id="account-email"></strong></p>
             <p class="hint" id="sync-status" aria-live="polite"></p>
+          </div>
+          <div class="setting">
+            <label class="switch-row" for="bio-toggle">
+              <span><strong>Entrar com Face ID ou digital</strong>
+                <small class="hint" id="bio-hint">Ao abrir o app neste aparelho, pede a biometria em vez de deixar entrar direto.</small></span>
+              <input type="checkbox" id="bio-toggle" class="switch">
+            </label>
           </div>
           <div><button type="button" id="logout">Sair da conta</button></div>
         </section>

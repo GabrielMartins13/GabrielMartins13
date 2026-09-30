@@ -22,6 +22,8 @@ Para levar os dados entre aparelhos ou versões, use Personalizar → Copiar dad
 
 Os dados de cada conta ficam no documento `users/{id da conta}`, e as regras só deixam o próprio dono ler e gravar. Ao entrar pela primeira vez num aparelho que já tinha dados de antes do login, o app oferece levá-los para a conta.
 
+Em **Personalizar → Conta**, a opção **Entrar com Face ID ou digital** trava o app naquele aparelho: ao abrir, ou depois de mais de 2 minutos em segundo plano, ele pede a biometria do aparelho (WebAuthn). A senha continua valendo como alternativa e é necessária no primeiro acesso de cada aparelho.
+
 ## Páginas
 
 - **Início**: painel com receitas, despesas e saldos comparados ao mês anterior, gráfico de receitas × despesas (6 ou 12 meses), evolução do saldo acumulado, ritmo de gastos do mês contra o mês anterior, tendência por categoria, gastos por dia, gastos por cartão e forma de pagamento, orçamentos e últimas transações
