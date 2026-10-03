@@ -326,6 +326,13 @@ form label input, form label select { color: var(--text); width: 100%; }
 .cc details summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
 .card-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--c); margin-right: 4px; vertical-align: 1px; }
 .pay { white-space: nowrap; }
+.cc-face .cc-due { display: block; margin-top: 2px; }
+.status { font-weight: 600; }
+.status.pos { color: var(--pos); }
+.status.warn { color: var(--warn); }
+.status.neg { color: var(--neg); }
+.invoice-row strong { font-variant-numeric: tabular-nums; }
+.invoice-row button { flex: none; }
 
 /* Login */
 body.locked > header, body.locked > nav, body.locked > main { display: none !important; }

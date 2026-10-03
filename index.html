@@ -97,6 +97,11 @@
 
       <div class="grid-2">
         <section class="panel wide">
+          <h3>Próximas faturas</h3>
+          <ul id="home-invoices" class="simple-list"></ul>
+        </section>
+
+        <section class="panel wide">
           <div class="panel-head">
             <h3>Receitas × despesas</h3>
             <div class="segmented small" role="radiogroup" aria-label="Período dos gráficos">
@@ -256,6 +261,11 @@
               <input type="hidden" name="cardId">
               <label>Nome do cartão<input id="card-name" name="cardName" required maxlength="30" placeholder="Ex.: Nubank"></label>
               <label>Limite do crédito (opcional)<input id="card-limit" name="cardLimit" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Ex.: 5000"></label>
+              <div class="row2">
+                <label>Dia do vencimento<input id="card-due" name="cardDue" type="number" min="1" max="31" inputmode="numeric" placeholder="Ex.: 10"></label>
+                <label>Dia do fechamento<input id="card-closing" name="cardClosing" type="number" min="1" max="31" inputmode="numeric" placeholder="Opcional"></label>
+              </div>
+              <p class="hint">Com o vencimento, o app monta as faturas. O fechamento costuma ser uns 7 dias antes; se deixar vazio, o app considera 7 dias antes do vencimento.</p>
               <fieldset class="setting">
                 <legend>Cor</legend>
                 <div class="swatches" id="card-colors"></div>

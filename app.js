@@ -204,7 +204,9 @@ function payInfo(t) {
   if (t.type !== 'expense' || !METHODS[t.method]) return null;
   if (t.cardId) {
     const card = cardById(t.cardId);
-    return { text: `${card ? card.name : 'Cartão excluído'} · ${METHODS[t.method].toLowerCase()}`, color: card ? safeColor(card.color) : null };
+    let text = `${card ? card.name : 'Cartão excluído'} · ${METHODS[t.method].toLowerCase()}`;
+    if (card?.dueDay && t.method === 'credit' && t.date) text += ` · fatura ${fmtDM(invoiceDueDate(card, invoiceMonth(card, t.date)))}`;
+    return { text, color: card ? safeColor(card.color) : null };
   }
   return { text: METHODS[t.method], color: null };
 }
@@ -214,6 +216,132 @@ function payHtml(t) {
   if (!info) return '';
   const dot = info.color ? `<i class="card-dot" style="--c:${info.color}"></i>` : '';
   return ` · <span class="pay">${dot}${escapeHtml(info.text)}</span>`;
+}
+
+// ---------- Faturas do cartão de crédito ----------
+
+const fmtDM = (date) => `${date.slice(8, 10)}/${date.slice(5, 7)}`;
+const dayNumber = (date) => { const [y, m, d] = date.split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
+const daysInMonth = (ym) => { const [y, m] = ym.split('-').map(Number); return new Date(y, m, 0).getDate(); };
+
+// Dia do fechamento: o informado ou 7 dias antes do vencimento (voltando para o mês anterior se precisar)
+function closingDay(card) {
+  if (card.closingDay) return card.closingDay;
+  const c = card.dueDay - 7;
+  return c >= 1 ? c : c + 30;
+}
+
+// Mês (YYYY-MM) do vencimento da fatura em que entra uma compra no crédito feita em `date`.
+// Compra a partir do dia do fechamento vai para a fatura seguinte, como nos bancos.
+function invoiceMonth(card, date) {
+  const closing = closingDay(card);
+  let closeYm = date.slice(0, 7);
+  if (Number(date.slice(8, 10)) >= Math.min(closing, daysInMonth(closeYm))) closeYm = addMonths(closeYm, 1);
+  return card.dueDay > closing ? closeYm : addMonths(closeYm, 1);
+}
+
+const invoiceDueDate = (card, ym) => dateInMonth(ym, card.dueDay);
+function invoiceCloseDate(card, ym) {
+  const closing = closingDay(card);
+  return dateInMonth(card.dueDay > closing ? ym : addMonths(ym, -1), closing);
+}
+
+// Compras no crédito do cartão, mais a previsão das contas fixas dos próximos 2 meses (ainda não lançadas)
+function creditCharges(card) {
+  const charges = state.transactions.filter((t) => t.type === 'expense' && t.method === 'credit' && t.cardId === card.id);
+  const nowYm = today().slice(0, 7);
+  for (const r of state.recurring) {
+    if (r.cardId !== card.id || r.method !== 'credit') continue;
+    for (let ym = addMonths(nowYm, 1); ym <= addMonths(nowYm, 2); ym = addMonths(ym, 1)) {
+      const id = `${r.id}-${ym}`;
+      if (ym < r.start || (r.skipped || []).includes(ym) || charges.some((t) => t.id === id)) continue;
+      charges.push({ id, desc: r.desc, amount: r.amount, date: dateInMonth(ym, r.day), projected: true });
+    }
+  }
+  return charges;
+}
+
+// Faturas do cartão por mês de vencimento: { ym, total, items }
+function invoicesOf(card) {
+  const map = new Map();
+  if (!card.dueDay) return map;
+  for (const t of creditCharges(card)) {
+    const ym = invoiceMonth(card, t.date);
+    const inv = map.get(ym) || { ym, total: 0, items: [] };
+    inv.total = Math.round((inv.total + t.amount) * 100) / 100;
+    inv.items.push(t);
+    map.set(ym, inv);
+  }
+  return map;
+}
+
+function invoiceStatus(card, ym) {
+  if ((card.paid || []).includes(ym)) return { cls: 'pos', text: 'Paga', paid: true };
+  const now = today();
+  const days = dayNumber(invoiceDueDate(card, ym)) - dayNumber(now);
+  const plural = (n) => `${n} dia${n > 1 ? 's' : ''}`;
+  if (days < 0) return { cls: 'neg', text: `Vencida há ${plural(-days)}` };
+  if (days === 0) return { cls: 'neg', text: 'Vence hoje' };
+  if (days <= 3) return { cls: 'warn', text: `Vence em ${plural(days)}` };
+  const close = invoiceCloseDate(card, ym);
+  return { cls: '', text: now >= close ? `Fechada · vence em ${plural(days)}` : `Aberta · fecha ${fmtDM(close)}` };
+}
+
+// Faturas para mostrar: a anterior se ainda não foi paga, a atual e as próximas com valor
+function upcomingInvoices(card) {
+  const all = invoicesOf(card);
+  const nowYm = today().slice(0, 7);
+  const out = [];
+  for (let ym = addMonths(nowYm, -2); ym <= addMonths(nowYm, 3); ym = addMonths(ym, 1)) {
+    const inv = all.get(ym);
+    if (!inv || inv.total <= 0) continue;
+    const st = invoiceStatus(card, ym);
+    if (ym < nowYm && st.paid) continue;
+    out.push({ ...inv, card, status: st, due: invoiceDueDate(card, ym), projected: inv.items.some((t) => t.projected) });
+  }
+  return out;
+}
+
+function invoiceRow(inv, withCardName) {
+  const { card, ym, status } = inv;
+  const name = withCardName
+    ? `<i class="card-dot" style="--c:${safeColor(card.color)}"></i>${escapeHtml(card.name)} · `
+    : '';
+  const action = status.paid
+    ? `<button type="button" data-invoice-unpay="${card.id}|${ym}">Desfazer</button>`
+    : `<button type="button" data-invoice-pay="${card.id}|${ym}">Marcar como paga</button>`;
+  return `<li class="invoice-row">
+    <div><strong>${name}${brl.format(inv.total)}</strong>
+      <small>Fatura de ${formatMonth(ym)} · vence ${fmtDM(inv.due)} · <span class="status ${status.cls}">${status.text}</span>${inv.projected ? ' · inclui contas fixas previstas' : ''}</small></div>
+    ${action}
+  </li>`;
+}
+
+function setInvoicePaid(value, paid) {
+  const [cardId, ym] = value.split('|');
+  const card = cardById(cardId);
+  if (!card) return;
+  const set = new Set(card.paid || []);
+  if (paid) set.add(ym);
+  else set.delete(ym);
+  card.paid = [...set].sort();
+  save();
+  render();
+}
+
+function renderHomeInvoices() {
+  const el = $('home-invoices');
+  const withDue = state.cards.filter((c) => c.dueDay);
+  if (!withDue.length) {
+    el.innerHTML = `<li class="hint">${state.cards.length
+      ? 'Informe o dia do vencimento dos seus cartões na página <a href="#cartoes">Cartões</a> para ver as faturas aqui.'
+      : 'Cadastre seus cartões de crédito na página <a href="#cartoes">Cartões</a> para acompanhar as faturas.'}</li>`;
+    return;
+  }
+  // A primeira fatura não paga de cada cartão, da que vence antes para a que vence depois
+  const rows = withDue.map((c) => upcomingInvoices(c).find((inv) => !inv.status.paid)).filter(Boolean)
+    .sort((a, b) => a.due.localeCompare(b.due));
+  el.innerHTML = rows.length ? rows.map((inv) => invoiceRow(inv, true)).join('') : '<li class="hint">Nenhuma fatura em aberto.</li>';
 }
 
 const monthTransactions = (ym = currentMonth()) => state.transactions.filter((t) => t.date.startsWith(ym));
@@ -661,6 +789,7 @@ function render() {
   fillCardOptions();
   renderPayments(list);
   renderCards(list);
+  renderHomeInvoices();
 }
 
 function renderPayments(list) {
@@ -702,7 +831,8 @@ function renderCards(list) {
     }
     return `<article class="panel cc">
       <div class="cc-face" style="--c:${color};--on:${textOn(color)}">
-        <div class="cc-top"><strong>${escapeHtml(c.name)}</strong><span class="cc-chip" aria-hidden="true"></span></div>
+        <div><div class="cc-top"><strong>${escapeHtml(c.name)}</strong><span class="cc-chip" aria-hidden="true"></span></div>
+          ${c.dueDay ? `<small class="cc-due">Vence dia ${c.dueDay} · fecha dia ${closingDay(c)}</small>` : ''}</div>
         <div><small>Gasto em ${month}</small><span class="cc-total">${brl.format(credit + debit)}</span></div>
       </div>
       <div class="cc-stats">
@@ -710,6 +840,12 @@ function renderCards(list) {
         <div><span>Débito</span><strong>${brl.format(debit)}</strong></div>
       </div>
       ${limit}
+      ${c.dueDay ? (() => {
+        const invs = upcomingInvoices(c);
+        return `<div><h4>Faturas</h4>${invs.length
+          ? `<ul class="simple-list">${invs.map((inv) => invoiceRow(inv, false)).join('')}</ul>`
+          : '<p class="hint">Nenhuma compra no crédito para as próximas faturas.</p>'}</div>`;
+      })() : '<p class="hint">Toque em Editar e informe o dia do vencimento para ver as faturas deste cartão.</p>'}
       ${rules.length ? `<div><h4>Contas fixas neste cartão</h4><ul class="simple-list">${rules.map((r) => `<li><div><strong>${escapeHtml(r.desc)}</strong>
         <small>${brl.format(r.amount)} · todo dia ${r.day} · ${(METHODS[r.method] || '').toLowerCase()}</small></div></li>`).join('')}</ul></div>` : ''}
       ${txs.length ? `<details><summary>Ver lançamentos do mês (${txs.length})</summary><ul class="tx-list">${txs.map((t) => txItem(t, false)).join('')}</ul></details>` : ''}
@@ -743,6 +879,18 @@ function updatePaymentFields() {
   const needsCard = usesCard(form.elements.method.value);
   form.querySelector('.card-wrap').hidden = !(needsCard && state.cards.length);
   form.querySelector('.card-hint').hidden = !(needsCard && !state.cards.length);
+
+  // Em qual fatura a compra no crédito vai entrar
+  const hint = form.querySelector('.invoice-hint');
+  const card = cardById(form.elements.card.value);
+  const date = form.elements.date.value;
+  const show = form.elements.method.value === 'credit' && card?.dueDay && /^\d{4}-\d{2}-\d{2}$/.test(date);
+  hint.hidden = !show;
+  if (show) {
+    const due = invoiceDueDate(card, invoiceMonth(card, date));
+    const first = form.elements.repeat.value === 'installments' ? 'A 1ª parcela entra' : 'Entra';
+    hint.textContent = `${first} na fatura do ${card.name} que vence em ${fmtDM(due)}/${due.slice(0, 4)}.`;
+  }
 }
 
 // ---------- Formulário de cartão ----------
@@ -770,14 +918,19 @@ function buildCardForm() {
     const name = el.cardName.value.trim();
     if (!name) return;
     const limit = parseFloat(el.cardLimit.value);
+    const dayOrNull = (v) => { const n = Math.round(Number(v)); return n >= 1 && n <= 31 ? n : null; };
     const card = {
       id: el.cardId.value || newId(),
       name,
       color: safeColor(el.cardColor.value),
       limit: limit > 0 ? Math.round(limit * 100) / 100 : null,
+      dueDay: dayOrNull(el.cardDue.value),
+      closingDay: dayOrNull(el.cardClosing.value),
     };
+    if (card.closingDay && !card.dueDay) return notify('Informe também o dia do vencimento.');
     const idx = state.cards.findIndex((c) => c.id === card.id);
-    if (idx >= 0) state.cards[idx] = card;
+    // Mantém as faturas já marcadas como pagas
+    if (idx >= 0) state.cards[idx] = { ...state.cards[idx], ...card };
     else state.cards.push(card);
     save();
     resetCardForm();
@@ -793,6 +946,8 @@ function editCard(id) {
   el.cardId.value = c.id;
   el.cardName.value = c.name;
   el.cardLimit.value = c.limit || '';
+  el.cardDue.value = c.dueDay || '';
+  el.cardClosing.value = c.closingDay || '';
   const radio = cardForm.querySelector(`input[name="cardColor"][value="${safeColor(c.color)}"]`);
   if (radio) radio.checked = true;
   $('card-form-title').textContent = 'Editar cartão';
@@ -837,7 +992,8 @@ function buildForm(type) {
       <label>Pagamento<select id="expense-method" name="method">${Object.entries(METHODS).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
       <label class="card-wrap">Cartão<select id="expense-card" name="card"></select></label>
     </div>
-    <p class="hint card-hint" hidden>Nenhum cartão cadastrado. <a href="#cartoes">Cadastre seus cartões</a> para escolher aqui.</p>` : ''}
+    <p class="hint card-hint" hidden>Nenhum cartão cadastrado. <a href="#cartoes">Cadastre seus cartões</a> para escolher aqui.</p>
+    <p class="hint invoice-hint" hidden></p>` : ''}
     <label class="repeat-wrap">Repetição<select id="${type}-repeat" name="repeat">${repeatOptions}</select></label>
     <label class="installments-wrap" hidden>Número de parcelas<input id="${type}-installments" name="installments" type="number" min="2" max="60" value="2"></label>
     <p class="hint repeat-hint" hidden></p>
@@ -847,7 +1003,9 @@ function buildForm(type) {
     </div>`;
   forms[type] = form;
   form.elements.repeat.addEventListener('change', () => updateRepeatFields(type));
-  if (type === 'expense') form.elements.method.addEventListener('change', updatePaymentFields);
+  if (type === 'expense') {
+    for (const name of ['method', 'card', 'date', 'repeat']) form.elements[name].addEventListener('change', updatePaymentFields);
+  }
   form.querySelector('.cancel').addEventListener('click', () => resetForm(type));
   form.addEventListener('submit', (e) => { e.preventDefault(); submitForm(type); });
 }
@@ -1185,9 +1343,11 @@ $('wipe').addEventListener('click', async () => {
 // ---------- Eventos gerais ----------
 
 document.addEventListener('click', (e) => {
-  const btn = e.target.closest('button[data-edit], button[data-del], button[data-stop], button[data-card-edit], button[data-card-del]');
+  const btn = e.target.closest('button[data-edit], button[data-del], button[data-stop], button[data-card-edit], button[data-card-del], button[data-invoice-pay], button[data-invoice-unpay]');
   if (!btn) return;
-  const { edit, del, stop, cardEdit, cardDel } = btn.dataset;
+  const { edit, del, stop, cardEdit, cardDel, invoicePay, invoiceUnpay } = btn.dataset;
+  if (invoicePay) return setInvoicePaid(invoicePay, true);
+  if (invoiceUnpay) return setInvoicePaid(invoiceUnpay, false);
   if (edit) startEdit(edit);
   else if (del) deleteTx(del);
   else if (stop) stopRecurring(stop);
