@@ -53,6 +53,8 @@ function normalize(data) {
     budgets: data.budgets || {},
     recurring: Array.isArray(data.recurring) ? data.recurring : [],
     cards: Array.isArray(data.cards) ? data.cards : [],
+    // Integração com bancos: contas da Pluggy ligadas a cartões, importações apagadas e última sincronização
+    pluggy: { accounts: {}, ignored: [], lastSync: null, lastSyncAt: 0, syncedFrom: null, ...(data.pluggy || {}) },
   };
 }
 
@@ -389,7 +391,7 @@ function budgetBar(spent, limit) {
 function txItem(t, withActions) {
   const [y, m, d] = t.date.split('-');
   const sign = t.type === 'income' ? '+' : '−';
-  const tag = t.ruleId ? ' · fixa' : '';
+  const tag = (t.ruleId ? ' · fixa' : '') + (t.source === 'pluggy' ? ' · do banco' : '');
   return `<li${withActions ? '' : ' class="readonly"'}>
     <div class="tx-info"><strong>${escapeHtml(t.desc)}</strong><small>${d}/${m}/${y} · ${escapeHtml(t.category)}${tag}${payHtml(t)}</small></div>
     <span class="tx-amount ${t.type === 'income' ? 'pos' : 'neg'}">${sign} ${brl.format(t.amount)}</span>
@@ -1139,6 +1141,8 @@ async function deleteTx(id) {
   if (!choice) return;
   const removed = new Set([id, ...(choice === 'all' ? siblings.map((t) => t.id) : [])]);
   state.transactions = state.transactions.filter((t) => !removed.has(t.id));
+  // Importada do banco: não trazer de volta na próxima sincronização
+  if (tx.source === 'pluggy') state.pluggy.ignored = [...new Set([...state.pluggy.ignored, id])];
   // Não recriar este mês de um lançamento fixo
   const rule = tx.ruleId && state.recurring.find((r) => r.id === tx.ruleId);
   if (rule) rule.skipped = [...(rule.skipped || []), tx.date.slice(0, 7)];
@@ -1455,7 +1459,8 @@ async function pushAccount() {
   if (!cloud.doc || !cloud.dirty) return;
   const stamp = cloud.updatedAt;
   try {
-    await cloud.doc.set({ state: JSON.stringify(state), updatedAt: stamp });
+    // merge: preserva outros campos do documento (as chaves da Pluggy)
+    await cloud.doc.set({ state: JSON.stringify(state), updatedAt: stamp }, { merge: true });
     // Só marca como enviado se nada mudou enquanto subia
     if (cloud.updatedAt === stamp) {
       cloud.dirty = false;
@@ -1492,6 +1497,7 @@ async function openAccount(user) {
   } catch {
     online = false;
   }
+  banks.creds = remote?.pluggy || null;
 
   let isNew = false;
   if (cache?.dirty && cache.updatedAt > (remote?.updatedAt || 0)) {
@@ -1531,6 +1537,7 @@ async function openAccount(user) {
   $('account').hidden = false;
   $('account-email').textContent = user.email;
   $('data-hint').textContent = 'Seus dados ficam salvos na sua conta e aparecem em qualquer aparelho em que você entrar.';
+  $('banks').hidden = false;
   if (cloud.dirty) pushAccount();
   else setSync(online ? 'saved' : 'offline');
   return isNew;
@@ -1570,6 +1577,296 @@ async function logout() {
   await firebase.auth().signOut();
   location.reload();
 }
+
+// ---------- Bancos (Open Finance pela Pluggy) ----------
+// As chaves do Meu Pluggy ficam no documento da conta (campo pluggy, fora do state, para não
+// irem no "Copiar dados"). As chamadas passam pelo proxy do Cloudflare (pluggy-proxy/worker.js).
+
+const banks = {
+  proxy: typeof window.FYNA_PLUGGY_PROXY === 'string' ? window.FYNA_PLUGGY_PROXY.replace(/\/+$/, '') : null,
+  creds: null, // { clientId, clientSecret, itemIds: [], from }
+  busy: false,
+};
+
+const addDays = (date, n) => {
+  const [y, m, d] = date.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + n));
+  return dt.toISOString().slice(0, 10);
+};
+
+function bankStatus(text, error = false) {
+  const el = $('pg-status');
+  el.textContent = text;
+  el.classList.toggle('pg-status-error', error);
+}
+
+async function pluggyFetch(path, { method = 'GET', body, apiKey } = {}) {
+  let res;
+  try {
+    res = await fetch(`${banks.proxy}${path}`, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...(apiKey ? { 'X-API-KEY': apiKey } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new Error('Sem conexão com o serviço dos bancos. Verifique a internet e tente de novo.');
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const code = data.codeDescription || data.code || '';
+    if (path === '/auth') throw new Error('Client ID ou Client Secret incorretos. Confira no Dashboard da Pluggy, na aba Aplicação.');
+    if (res.status === 404 && path.startsWith('/items/')) throw new Error(`Não encontrei a conexão ${path.slice(7)}. Confira o ID no Dashboard da Pluggy.`);
+    throw new Error(`A Pluggy respondeu com erro (${res.status}${code ? ` ${code}` : ''}).`);
+  }
+  return data;
+}
+
+async function fetchTransactions(accountId, from, to, apiKey) {
+  const out = [];
+  for (let page = 1; page <= 50; page++) {
+    const r = await pluggyFetch(`/transactions?accountId=${encodeURIComponent(accountId)}&from=${from}&to=${to}&pageSize=500&page=${page}`, { apiKey });
+    out.push(...(r.results || []));
+    if (!r.totalPages || page >= r.totalPages) break;
+  }
+  return out;
+}
+
+// Categoria da Pluggy (em inglês) → categoria do FYNA
+function mapCategory(category, type) {
+  const c = (category || '').toLowerCase();
+  if (type === 'income') {
+    if (/salary|payroll|sal[aá]rio/.test(c)) return 'Salário';
+    if (/investment|interest|dividend|rendimento/.test(c)) return 'Investimentos';
+    return 'Outros';
+  }
+  const rules = [
+    [/grocer|supermarket|food|restaurant|eating|bakery|alimenta|mercado|delivery/, 'Alimentação'],
+    [/rent|housing|mortgage|condo|moradia|aluguel/, 'Moradia'],
+    [/transport|taxi|ride|uber|fuel|gas station|parking|toll|vehicle|automotive|bus|metro/, 'Transporte'],
+    [/health|pharma|drug|hospital|clinic|dentist|medical|sa[uú]de|farm[aá]cia/, 'Saúde'],
+    [/education|school|course|university|book|educa/, 'Educação'],
+    [/leisure|entertainment|travel|hotel|airline|cinema|game|sport|lazer|streaming|music|video/, 'Lazer'],
+    [/shopping|clothing|electronic|online|store|department|compras/, 'Compras'],
+    [/utilit|electric|water|telecom|internet|mobile|phone|tax|fee|insurance|service|bill|contas/, 'Contas'],
+  ];
+  return rules.find(([re]) => re.test(c))?.[1] || 'Outros';
+}
+
+const normName = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+const dayOf = (iso) => (iso ? Number(String(iso).slice(8, 10)) || null : null);
+
+// Liga uma conta da Pluggy a um cartão do FYNA (cria o cartão de crédito se ainda não existir)
+function accountMapping(acc) {
+  const isCard = acc.type === 'CREDIT' && (!acc.subtype || acc.subtype === 'CREDIT_CARD');
+  const label = (acc.marketingName || acc.name || (isCard ? 'Cartão de crédito' : 'Conta')).trim();
+  let m = state.pluggy.accounts[acc.id];
+  if (!m) {
+    const similar = state.cards.find((c) => normName(c.name) && normName(label).includes(normName(c.name)));
+    let cardId = similar?.id || null;
+    if (isCard && !similar) {
+      const card = {
+        id: newId(),
+        name: label.slice(0, 30),
+        color: CARD_COLORS[state.cards.length % CARD_COLORS.length].value,
+        limit: acc.creditData?.creditLimit > 0 ? acc.creditData.creditLimit : null,
+        dueDay: dayOf(acc.creditData?.balanceDueDate),
+        closingDay: dayOf(acc.creditData?.balanceCloseDate),
+      };
+      state.cards.push(card);
+      cardId = card.id;
+    }
+    // Contas que não são de pagamento (empréstimos etc.) começam desligadas
+    const skip = acc.type === 'CREDIT' && !isCard;
+    m = state.pluggy.accounts[acc.id] = { name: label, kind: isCard ? 'card' : 'bank', cardId, skip };
+  }
+  m.name = label;
+  // Preenche vencimento e fechamento do cartão que ainda não tem
+  const card = cardById(m.cardId);
+  if (isCard && card && !card.dueDay && acc.creditData?.balanceDueDate) {
+    card.dueDay = dayOf(acc.creditData.balanceDueDate);
+    card.closingDay = card.closingDay || dayOf(acc.creditData.balanceCloseDate);
+  }
+  return m;
+}
+
+// Transação da Pluggy → transação do FYNA (null quando não deve entrar)
+function fromPluggy(t, m, accountId) {
+  const amount = Math.round(Math.abs(t.amountInAccountCurrency ?? t.amount) * 100) / 100;
+  if (!amount || !t.date) return null;
+  const category = t.category || '';
+  const op = t.operationType || '';
+  if (m.kind === 'card') {
+    // No cartão, CREDIT é pagamento da fatura, estorno ou cashback: as compras já contam o gasto
+    if (t.type === 'CREDIT') return null;
+  } else {
+    // Pagar a fatura pela conta duplicaria as compras do cartão; transferir entre as próprias contas não é gasto
+    if (op === 'PAGAMENTO_FATURA' || /credit card payment|card bill|fatura/i.test(category)) return null;
+    if (/same person|mesma titularidade|own account/i.test(category)) return null;
+    if (/^investment/i.test(category) && t.type === 'DEBIT') return null;
+  }
+  const type = t.type === 'CREDIT' ? 'income' : 'expense';
+  let desc = (t.description || 'Sem descrição').replace(/\s*PARC\s*\d+\s*\/\s*\d+\s*$/i, '').trim();
+  const md = t.creditCardMetadata;
+  if (md?.totalInstallments > 1 && md.installmentNumber) desc += ` (${md.installmentNumber}/${md.totalInstallments})`;
+  const tx = {
+    id: `pg-${t.id}`,
+    type,
+    desc: desc.slice(0, 80),
+    amount,
+    category: mapCategory(category, type),
+    date: String(t.date).slice(0, 10),
+    source: 'pluggy',
+    pgAccount: accountId,
+    pgStatus: t.status || 'POSTED',
+  };
+  if (type === 'expense') {
+    if (m.kind === 'card') {
+      tx.method = 'credit';
+    } else {
+      tx.method = /PIX/i.test(t.paymentData?.paymentMethod || op) ? 'pix' : 'debit';
+    }
+    if (tx.method !== 'pix' && m.cardId) tx.cardId = m.cardId;
+  }
+  return tx;
+}
+
+async function syncBanks({ quiet = false } = {}) {
+  if (banks.busy) return;
+  if (!banks.proxy) return bankStatus('A integração com os bancos ainda não foi configurada.', true);
+  const creds = banks.creds;
+  if (!creds?.clientId || !creds?.clientSecret || !creds.itemIds?.length) {
+    if (!quiet) bankStatus('Preencha Client ID, Client Secret e pelo menos um ID de conexão.', true);
+    return;
+  }
+  banks.busy = true;
+  $('pg-sync').disabled = true;
+  bankStatus('Conectando aos bancos…');
+  const p = state.pluggy;
+  const to = today();
+  // Primeira vez (ou data inicial mudou): desde a data escolhida; depois, revisa os últimos 10 dias
+  const from = !p.lastSync || p.syncedFrom !== creds.from
+    ? (creds.from || `${addMonths(to.slice(0, 7), -1)}-01`)
+    : addDays(p.lastSync, -10);
+  let added = 0;
+  const warnings = [];
+  try {
+    const { apiKey } = await pluggyFetch('/auth', { method: 'POST', body: { clientId: creds.clientId, clientSecret: creds.clientSecret } });
+    const ignored = new Set(p.ignored);
+    for (const itemId of creds.itemIds) {
+      const item = await pluggyFetch(`/items/${encodeURIComponent(itemId)}`, { apiKey });
+      if (item.status && !['UPDATED', 'UPDATING'].includes(item.status)) {
+        warnings.push(`a conexão ${item.connector?.name || itemId} precisa ser atualizada no Meu Pluggy`);
+      }
+      const accounts = (await pluggyFetch(`/accounts?itemId=${encodeURIComponent(itemId)}`, { apiKey })).results || [];
+      for (const acc of accounts) {
+        const m = accountMapping(acc);
+        if (m.skip) continue;
+        bankStatus(`Importando ${m.name}…`);
+        const fresh = (await fetchTransactions(acc.id, from, to, apiKey)).map((t) => fromPluggy(t, m, acc.id)).filter(Boolean);
+        const freshIds = new Set(fresh.map((t) => t.id));
+        // Compras pendentes podem mudar de ID quando o banco confirma: tira as que sumiram
+        state.transactions = state.transactions.filter((t) => !(t.pgAccount === acc.id && t.pgStatus === 'PENDING' && t.date >= from && !freshIds.has(t.id)));
+        const existing = new Map(state.transactions.map((t) => [t.id, t]));
+        for (const tx of fresh) {
+          if (ignored.has(tx.id)) continue;
+          const old = existing.get(tx.id);
+          if (old) {
+            old.pgStatus = tx.pgStatus; // mantém o que a pessoa editou
+            continue;
+          }
+          state.transactions.push(tx);
+          added++;
+        }
+      }
+    }
+    p.lastSync = to;
+    p.lastSyncAt = Date.now();
+    p.syncedFrom = creds.from;
+    save();
+    render();
+    const when = new Date(p.lastSyncAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+    bankStatus(`Última sincronização: ${when}. ${added ? `${added} transaç${added > 1 ? 'ões novas' : 'ão nova'}.` : 'Nada novo.'}${warnings.length ? ` Atenção: ${warnings.join('; ')}.` : ''}`, warnings.length > 0);
+    if (quiet && added) notify(`${added} transaç${added > 1 ? 'ões novas importadas' : 'ão nova importada'} dos seus bancos.`);
+  } catch (err) {
+    bankStatus(err.message, true);
+    if (!quiet) notify(err.message);
+  } finally {
+    banks.busy = false;
+    $('pg-sync').disabled = false;
+    renderBanks();
+  }
+}
+
+// Sincroniza sozinho ao abrir, no máximo uma vez a cada 20 horas
+function autoSyncBanks() {
+  if (banks.proxy && banks.creds?.itemIds?.length && Date.now() - (state.pluggy.lastSyncAt || 0) > 20 * 3600 * 1000) {
+    syncBanks({ quiet: true });
+  }
+}
+
+function renderBanks() {
+  if (!cloud.user) return;
+  const c = banks.creds || {};
+  const form = $('banks-form').elements;
+  if (document.activeElement?.closest('#banks-form') == null) {
+    form.clientId.value = c.clientId || '';
+    form.clientSecret.value = c.clientSecret || '';
+    form.items.value = (c.itemIds || []).join('\n');
+    form.from.value = c.from || `${addMonths(today().slice(0, 7), -1)}-01`;
+  }
+  if (!banks.proxy) {
+    $('banks-intro').textContent = 'A integração com os bancos ainda não foi ligada neste app (falta configurar o proxy).';
+    $('banks-form').hidden = true;
+    $('pg-sync').hidden = true;
+  }
+  const entries = Object.entries(state.pluggy.accounts);
+  $('pg-accounts-wrap').hidden = !entries.length;
+  $('pg-accounts').innerHTML = entries.map(([id, m]) => {
+    const value = m.skip ? 'skip' : m.cardId || '';
+    const options = state.cards.map((card) => `<option value="${card.id}"${card.id === value ? ' selected' : ''}>${escapeHtml(card.name)}</option>`).join('')
+      + `<option value=""${value === '' ? ' selected' : ''}>${m.kind === 'card' ? 'Sem cartão' : 'Sem cartão (Pix/débito)'}</option>`
+      + `<option value="skip"${value === 'skip' ? ' selected' : ''}>Não importar</option>`;
+    return `<li class="pg-account"><div><strong>${escapeHtml(m.name)}</strong><small>${m.kind === 'card' ? 'Cartão de crédito' : 'Conta'}</small></div>
+      <select data-pg-account="${escapeHtml(id)}" aria-label="Cartão do FYNA para ${escapeHtml(m.name)}">${options}</select></li>`;
+  }).join('');
+  if (!$('pg-status').textContent && state.pluggy.lastSyncAt) {
+    bankStatus(`Última sincronização: ${new Date(state.pluggy.lastSyncAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}.`);
+  }
+}
+
+$('banks-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target.elements;
+  const itemIds = [...new Set(f.items.value.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean))];
+  banks.creds = { clientId: f.clientId.value.trim(), clientSecret: f.clientSecret.value.trim(), itemIds, from: f.from.value || null };
+  try {
+    await cloud.doc.set({ pluggy: banks.creds }, { merge: true });
+  } catch {
+    return bankStatus('Não foi possível salvar as chaves na sua conta. Verifique a internet.', true);
+  }
+  syncBanks();
+});
+
+$('pg-sync').addEventListener('click', () => syncBanks());
+
+$('pg-accounts').addEventListener('change', (e) => {
+  const id = e.target.dataset.pgAccount;
+  const m = id && state.pluggy.accounts[id];
+  if (!m) return;
+  m.skip = e.target.value === 'skip';
+  m.cardId = m.skip ? m.cardId : e.target.value || null;
+  // Atualiza o cartão das transações já importadas dessa conta
+  if (!m.skip) {
+    for (const t of state.transactions) {
+      if (t.pgAccount !== id || t.type !== 'expense' || t.method === 'pix') continue;
+      if (m.cardId) t.cardId = m.cardId;
+      else delete t.cardId;
+    }
+  }
+  save();
+  render();
+  renderBanks();
+});
 
 // ---------- Tela de login ----------
 
@@ -1858,7 +2155,9 @@ async function boot() {
     startApp();
     hideAuth();
     syncBioToggle();
+    renderBanks();
     if (isNew) offerLegacyImport();
+    else autoSyncBanks();
   });
 }
 

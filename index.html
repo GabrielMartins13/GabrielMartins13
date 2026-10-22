@@ -304,6 +304,27 @@
           <div><button type="button" id="logout">Sair da conta</button></div>
         </section>
 
+        <section class="panel settings-panel" id="banks" hidden>
+          <h3>Bancos (Open Finance)</h3>
+          <p class="hint" id="banks-intro">Importa as transações dos seus bancos e cartões pelo Meu Pluggy, uma vez por dia. As chaves ficam só na sua conta.</p>
+          <form id="banks-form" class="banks-form" autocomplete="off">
+            <label>Client ID<input id="pg-client-id" name="clientId" spellcheck="false" autocapitalize="off"></label>
+            <label>Client Secret<input id="pg-client-secret" name="clientSecret" type="password" spellcheck="false" autocapitalize="off"></label>
+            <label>IDs das conexões (um por linha)<textarea id="pg-items" name="items" rows="3" spellcheck="false" autocapitalize="off"></textarea></label>
+            <label>Importar transações a partir de<input id="pg-from" name="from" type="date"></label>
+            <div class="form-actions"><button type="submit" class="primary">Salvar e sincronizar</button></div>
+          </form>
+          <div class="setting" id="pg-accounts-wrap" hidden>
+            <h4>Contas encontradas</h4>
+            <p class="hint">Escolha a qual cartão do FYNA cada conta corresponde.</p>
+            <ul id="pg-accounts" class="simple-list"></ul>
+          </div>
+          <div class="setting">
+            <p class="hint" id="pg-status" aria-live="polite"></p>
+            <div><button type="button" id="pg-sync">Sincronizar agora</button></div>
+          </div>
+        </section>
+
         <section class="panel settings-panel">
           <h3>Aparência</h3>
 
@@ -368,6 +389,7 @@
   </main>
 
   <script src="firebase-config.js"></script>
+  <script src="pluggy-config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

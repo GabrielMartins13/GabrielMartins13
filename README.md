@@ -24,13 +24,23 @@ Os dados de cada conta ficam no documento `users/{id da conta}`, e as regras só
 
 Em **Personalizar → Conta**, a opção **Entrar com Face ID ou digital** trava o app naquele aparelho: ao abrir, ou depois de mais de 2 minutos em segundo plano, ele pede a biometria do aparelho (WebAuthn). A senha continua valendo como alternativa e é necessária no primeiro acesso de cada aparelho.
 
+## Bancos (Open Finance pelo Meu Pluggy)
+
+O FYNA importa as transações dos bancos e cartões pelo **Meu Pluggy**, gratuito para uso pessoal (até 5 conexões do mesmo titular, atualizadas a cada 24 h). Cada pessoa:
+
+1. Cria a conta em https://meu.pluggy.ai e conecta os bancos.
+2. No https://dashboard.pluggy.ai cria uma aplicação, copia o **Client ID** e o **Client Secret** e cria uma conexão com o conector **MeuPluggy** para cada banco, anotando o **ID da conexão**.
+3. No FYNA, em **Personalizar → Bancos**, preenche as chaves e os IDs e toca em **Salvar e sincronizar**.
+
+As chaves ficam no campo `pluggy` do documento da conta no Firestore (fora dos dados exportados). As chamadas passam pelo proxy em `pluggy-proxy/`, cujo endereço fica em `pluggy-config.js`. Na importação: compras no cartão entram no crédito do cartão ligado à conta (o cartão é criado com limite, vencimento e fechamento vindos do banco); pagamentos de fatura e transferências entre contas próprias ficam de fora para não contar em dobro; transações apagadas no FYNA não voltam; compras pendentes que mudam de ID ao serem confirmadas não duplicam. Depois da primeira vez, sincroniza sozinho ao abrir o app, no máximo uma vez a cada 20 horas.
+
 ## Páginas
 
 - **Início**: próximas faturas dos cartões, receitas, despesas e saldos comparados ao mês anterior, gráfico de receitas × despesas (6 ou 12 meses), evolução do saldo acumulado, ritmo de gastos do mês contra o mês anterior, tendência por categoria, gastos por dia, gastos por cartão e forma de pagamento, orçamentos e últimas transações
 - **Despesas**: cadastro (avulsa, parcelada ou fixa mensal) com forma de pagamento (crédito, débito, Pix ou dinheiro) e cartão, lista com busca e filtro por cartão, gastos por categoria e orçamentos mensais com alerta em 80% e acima do limite
 - **Receitas**: cadastro (avulsa ou fixa mensal), lista com busca e receitas por origem
 - **Cartões**: cadastro dos cartões (nome, cor, limite, dia do vencimento e do fechamento), gasto do mês no crédito e no débito, uso do limite, faturas (valor, vencimento, status e marcar como paga), contas fixas e lançamentos por cartão. Compras no crédito entram na fatura pelo fechamento: a partir do dia do fechamento, vão para a fatura seguinte; sem fechamento informado, considera 7 dias antes do vencimento
-- **Personalizar**: conta (e-mail, status da sincronização e sair), nome no topo, cor principal, tema claro/escuro/automático, barra de navegação no topo ou embaixo, tamanho do texto, exportação CSV, backup e restauração
+- **Personalizar**: conta (e-mail, status da sincronização e sair), bancos conectados (Open Finance), nome no topo, cor principal, tema claro/escuro/automático, barra de navegação no topo ou embaixo, tamanho do texto, exportação CSV, backup e restauração
 
 ## Estrutura
 
@@ -41,3 +51,5 @@ Em **Personalizar → Conta**, a opção **Entrar com Face ID ou digital** trava
 - `manifest.webmanifest` — nome e ícones para instalar o app no celular
 - `firebase-config.js` — configuração do projeto Firebase (vazia = app sem login)
 - `firestore.rules` — regras de segurança do banco: cada conta só acessa os próprios dados
+- `pluggy-config.js` — endereço do proxy da Pluggy (vazio = integração com bancos desligada)
+- `pluggy-proxy/` — proxy da Pluggy para publicar no Cloudflare Workers
