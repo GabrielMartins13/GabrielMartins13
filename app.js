@@ -1250,7 +1250,7 @@ function applySettings() {
   }
   document.body.classList.toggle('nav-bottom', settings.nav === 'bottom');
   root.style.fontSize = settings.fontSize === 'large' ? '112.5%' : '';
-  // FYNA fica sempre; o nome escolhido vem depois: "FYNA - Gabriel"
+  // FYNA fica sempre; o nome escolhido vem depois: "FYNA - Sua loja"
   const name = [DEFAULT_NAME, settings.name.trim()].filter(Boolean).join(' - ');
   $('app-name').textContent = name;
   document.title = name;
