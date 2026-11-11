@@ -32,7 +32,29 @@ const ACCENTS = [
   { name: 'Laranja', value: '#c4581b' },
   { name: 'Grafite', value: '#475569' },
 ];
-const DEFAULT_SETTINGS = { name: '', accent: '', theme: 'auto', nav: 'bottom', fontSize: 'normal', period: 6, version: 2 };
+// Fundos prontos por tipo (Padrão = fundo do tema, sem cores próprias)
+const BG_PRESETS = {
+  solid: [
+    { name: 'Meia-noite', colors: ['#0f1020'] }, { name: 'Grafite', colors: ['#1f2329'] },
+    { name: 'Índigo', colors: ['#1b1140'] }, { name: 'Vinho', colors: ['#2a0f1e'] },
+    { name: 'Floresta', colors: ['#0f2a22'] }, { name: 'Gelo', colors: ['#eef2f7'] }, { name: 'Areia', colors: ['#f3ede4'] },
+  ],
+  gradient2: [
+    { name: 'Índigo', colors: ['#1b1140', '#a02d6c'] }, { name: 'Oceano', colors: ['#0b1d3a', '#1c7f9e'] },
+    { name: 'Pôr do sol', colors: ['#2b1055', '#e0694f'] }, { name: 'Floresta', colors: ['#0f2027', '#2c7744'] },
+    { name: 'Lavanda', colors: ['#e9e4ff', '#ffd6ec'] }, { name: 'Céu', colors: ['#dff3ff', '#f1e6ff'] },
+  ],
+  gradient3: [
+    { name: 'Aurora', colors: ['#150a2e', '#5b3f9c', '#c42a78'] }, { name: 'Neon', colors: ['#0d0221', '#6a2ad8', '#0ab3d6'] },
+    { name: 'Brasa', colors: ['#1a0b0b', '#8f1d1f', '#d99a1e'] }, { name: 'Menta', colors: ['#0b2027', '#237f74', '#9cc9a0'] },
+    { name: 'Algodão', colors: ['#fbe3e8', '#e3e4fb', '#d7f3f0'] },
+  ],
+};
+const BG_COUNT = { solid: 1, gradient2: 2, gradient3: 3 };
+const DEFAULT_SETTINGS = {
+  name: '', accent: '', theme: 'auto', nav: 'bottom', fontSize: 'normal', period: 6, version: 2,
+  bgType: 'theme', bgColors: ['#150a2e', '#5b3f9c', '#c42a78'],
+};
 
 const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const $ = (id) => document.getElementById(id);
@@ -67,6 +89,7 @@ function loadSettings(...keys) {
   const stored = keys.map(readJSON).find(Boolean) || {};
   // Até a versão 2 a barra ficava no topo por padrão; quem não escolheu passa a ter a barra embaixo
   if (stored.version !== 2) delete stored.nav;
+  if (!(Array.isArray(stored.bgColors) && stored.bgColors.length === 3)) delete stored.bgColors;
   return { ...DEFAULT_SETTINGS, ...stored, version: 2 };
 }
 let settings = loadSettings(SETTINGS_KEY);
@@ -1209,9 +1232,22 @@ function applySettings() {
     root.style.removeProperty('--accent');
     root.style.removeProperty('--on-accent');
   }
-  if (settings.theme === 'light' || settings.theme === 'dark') root.setAttribute('data-theme', settings.theme);
-  else if (hostTheme) root.setAttribute('data-theme', hostTheme);
-  else root.removeAttribute('data-theme');
+  const n = BG_COUNT[settings.bgType];
+  const colors = (settings.bgColors || []).slice(0, n);
+  if (n && colors.length === n && colors.every((c) => /^#[0-9a-f]{6}$/i.test(c))) {
+    root.style.setProperty('--bg-image', n === 1 ? colors[0] : `linear-gradient(160deg, ${colors.join(', ')})`);
+    root.dataset.bg = 'custom';
+    // Com fundo próprio, o tema segue a média das cores para o texto continuar legível
+    const avg = [1, 3, 5].map((i) => Math.round(colors.reduce((s, c) => s + parseInt(c.slice(i, i + 2), 16), 0) / n)
+      .toString(16).padStart(2, '0')).join('');
+    root.setAttribute('data-theme', textOn(`#${avg}`) === '#111111' ? 'light' : 'dark');
+  } else {
+    root.style.removeProperty('--bg-image');
+    delete root.dataset.bg;
+    if (settings.theme === 'light' || settings.theme === 'dark') root.setAttribute('data-theme', settings.theme);
+    else if (hostTheme) root.setAttribute('data-theme', hostTheme);
+    else root.removeAttribute('data-theme');
+  }
   document.body.classList.toggle('nav-bottom', settings.nav === 'bottom');
   root.style.fontSize = settings.fontSize === 'large' ? '112.5%' : '';
   const name = settings.name.trim() || DEFAULT_NAME;
@@ -1224,9 +1260,30 @@ function syncSettingsForm() {
   $('set-name').value = settings.name;
   $('set-color').value = settings.accent || '#2f6fde';
   document.querySelectorAll('input[name="accent"]').forEach((r) => { r.checked = r.value === settings.accent; });
-  for (const key of ['theme', 'nav', 'fontSize', 'period']) {
+  for (const key of ['theme', 'nav', 'fontSize', 'period', 'bgType']) {
     document.querySelectorAll(`input[name="${key}"]`).forEach((r) => { r.checked = r.value === String(settings[key]); });
   }
+  const n = BG_COUNT[settings.bgType] || 0;
+  const presets = BG_PRESETS[settings.bgType] || [];
+  $('bg-presets').hidden = !n;
+  $('bg-hint').hidden = !n;
+  $('bg-colors').hidden = !n;
+  // Só redesenha a lista ao trocar o tipo, para não tirar o foco de quem está escolhendo
+  if ($('bg-presets').dataset.type !== settings.bgType) {
+    $('bg-presets').dataset.type = settings.bgType;
+    $('bg-presets').innerHTML = presets.map((p, i) => {
+      const bg = p.colors.length === 1 ? p.colors[0] : `linear-gradient(160deg, ${p.colors.join(', ')})`;
+      return `<label class="swatch-opt"><input type="radio" name="bgPreset" value="${i}">
+        <span style="--c:${bg}"></span>${p.name}</label>`;
+    }).join('');
+  }
+  document.querySelectorAll('input[name="bgPreset"]').forEach((r) => {
+    r.checked = presets[r.value].colors.every((c, j) => c === settings.bgColors[j]);
+  });
+  [0, 1, 2].forEach((i) => {
+    $(`bg-c${i}`).value = settings.bgColors[i];
+    $(`bg-c${i}`).parentElement.hidden = i >= n;
+  });
 }
 
 function buildSettings() {
@@ -1239,11 +1296,16 @@ function buildSettings() {
     const t = e.target;
     if (t.id === 'set-name') settings.name = t.value;
     else if (t.id === 'set-color') settings.accent = t.value;
-    else if (['accent', 'theme', 'nav', 'fontSize'].includes(t.name)) settings[t.name] = t.value;
-    else return;
+    else if (['accent', 'theme', 'nav', 'fontSize', 'bgType'].includes(t.name)) settings[t.name] = t.value;
+    else if (t.name === 'bgPreset') {
+      const p = BG_PRESETS[settings.bgType][Number(t.value)];
+      settings.bgColors = settings.bgColors.map((c, i) => p.colors[i] || c);
+    } else if (/^bg-c[012]$/.test(t.id)) {
+      settings.bgColors = settings.bgColors.map((c, i) => (i === Number(t.id.slice(-1)) ? t.value : c));
+    } else return;
     writeJSON(settingsKey, settings);
     applySettings();
-    if (t.id === 'set-color') syncSettingsForm();
+    if (t.id === 'set-color' || /^bg/.test(t.name) || /^bg-c/.test(t.id)) syncSettingsForm();
   });
 
   document.querySelectorAll('input[name="period"]').forEach((r) => r.addEventListener('change', () => {

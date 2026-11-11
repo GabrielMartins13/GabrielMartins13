@@ -40,7 +40,7 @@ As chaves ficam no campo `pluggy` do documento da conta no Firestore (fora dos d
 - **Despesas**: cadastro (avulsa, parcelada ou fixa mensal) com forma de pagamento (crédito, débito, Pix ou dinheiro) e cartão, lista com busca e filtro por cartão, gastos por categoria e orçamentos mensais com alerta em 80% e acima do limite
 - **Receitas**: cadastro (avulsa ou fixa mensal), lista com busca e receitas por origem
 - **Cartões**: cadastro dos cartões (nome, cor, limite, dia do vencimento e do fechamento), gasto do mês no crédito e no débito, uso do limite, faturas (valor, vencimento, status e marcar como paga), contas fixas e lançamentos por cartão. Compras no crédito entram na fatura pelo fechamento: a partir do dia do fechamento, vão para a fatura seguinte; sem fechamento informado, considera 7 dias antes do vencimento
-- **Personalizar**: conta (e-mail, status da sincronização e sair), bancos conectados (Open Finance), nome no topo, cor principal, tema claro/escuro/automático, barra de navegação no topo ou embaixo, tamanho do texto, exportação CSV, backup e restauração
+- **Personalizar**: conta (e-mail, status da sincronização e sair), bancos conectados (Open Finance), nome no topo, cor principal, tema claro/escuro/automático, fundo (padrão, cor sólida ou gradiente de 2 ou 3 cores, com opções prontas), barra de navegação no topo ou embaixo, tamanho do texto, exportação CSV, backup e restauração
 
 ## Estrutura
 

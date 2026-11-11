@@ -12,7 +12,7 @@
   <meta name="apple-mobile-web-app-title" content="FYNA">
   <meta name="theme-color" content="#f3effa" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#150a2e" media="(prefers-color-scheme: dark)">
-  <link rel="stylesheet" href="style.css?v=7">
+  <link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
   <!-- Login (só aparece quando o Firebase está configurado) -->
@@ -345,6 +345,23 @@
               <label><input type="radio" name="theme" value="auto"><span>Automático</span></label>
               <label><input type="radio" name="theme" value="light"><span>Claro</span></label>
               <label><input type="radio" name="theme" value="dark"><span>Escuro</span></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="setting">
+            <legend>Fundo</legend>
+            <div class="segmented">
+              <label><input type="radio" name="bgType" value="theme"><span>Padrão</span></label>
+              <label><input type="radio" name="bgType" value="solid"><span>Cor sólida</span></label>
+              <label><input type="radio" name="bgType" value="gradient2"><span>2 cores</span></label>
+              <label><input type="radio" name="bgType" value="gradient3"><span>3 cores</span></label>
+            </div>
+            <p class="hint" id="bg-hint">Com cor própria, o tema claro ou escuro acompanha o fundo.</p>
+            <div class="swatches" id="bg-presets"></div>
+            <div class="swatches" id="bg-colors">
+              <label class="custom-color">Cor 1 <input type="color" id="bg-c0"></label>
+              <label class="custom-color">Cor 2 <input type="color" id="bg-c1"></label>
+              <label class="custom-color">Cor 3 <input type="color" id="bg-c2"></label>
             </div>
           </fieldset>
 
