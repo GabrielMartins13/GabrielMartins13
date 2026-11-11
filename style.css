@@ -425,55 +425,58 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
    brilho na borda, flutuando sobre um fundo colorido suave.
    ============================================================ */
 :root {
-  --bg: #e8edf5;
+  --bg: #f6f1fb;
   --border: rgba(28, 36, 48, .1);
   --bar: rgba(28, 36, 48, .08);
   --grid: rgba(28, 36, 48, .08);
-  --glass: rgba(255, 255, 255, .5);
+  --glass: rgba(255, 255, 255, .6);
   --glass-strong: rgba(255, 255, 255, .72);
   --glass-line: rgba(255, 255, 255, .65);
   --glass-shine: rgba(255, 255, 255, .95);
   --glass-shadow: 0 8px 30px rgba(31, 45, 70, .12);
   --field: rgba(255, 255, 255, .55);
-  --blob: 45%;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0a0d12;
+    --bg: #050507;
     --border: rgba(255, 255, 255, .1);
     --bar: rgba(255, 255, 255, .08);
     --grid: rgba(255, 255, 255, .07);
-    --glass: rgba(36, 44, 56, .42);
-    --glass-strong: rgba(28, 34, 44, .78);
+    --glass: rgba(12, 10, 22, .55);
+    --glass-strong: rgba(14, 12, 24, .8);
     --glass-line: rgba(255, 255, 255, .12);
     --glass-shine: rgba(255, 255, 255, .22);
     --glass-shadow: 0 8px 30px rgba(0, 0, 0, .45);
     --field: rgba(255, 255, 255, .06);
-    --blob: 55%;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0a0d12;
+  --bg: #050507;
   --border: rgba(255, 255, 255, .1);
   --bar: rgba(255, 255, 255, .08);
   --grid: rgba(255, 255, 255, .07);
-  --glass: rgba(36, 44, 56, .42);
-  --glass-strong: rgba(28, 34, 44, .78);
+  --glass: rgba(12, 10, 22, .55);
+  --glass-strong: rgba(14, 12, 24, .8);
   --glass-line: rgba(255, 255, 255, .12);
   --glass-shine: rgba(255, 255, 255, .22);
   --glass-shadow: 0 8px 30px rgba(0, 0, 0, .45);
   --field: rgba(255, 255, 255, .06);
-  --blob: 55%;
 }
 
-/* Fundo: manchas de cor desfocadas (seguem a cor principal escolhida) */
+/* Fundo: ondas de magenta, violeta e ciano sobre preto, com granulado (estilo gradiente "aurora") */
 body::before {
-  content: ''; position: fixed; inset: -10%; z-index: -1; pointer-events: none;
+  content: ''; position: fixed; inset: 0; z-index: -2; pointer-events: none;
   background:
-    radial-gradient(40% 35% at 12% 8%, color-mix(in srgb, var(--accent) var(--blob), transparent), transparent 70%),
-    radial-gradient(35% 30% at 92% 22%, color-mix(in srgb, var(--series-2) calc(var(--blob) * .8), transparent), transparent 70%),
-    radial-gradient(45% 40% at 72% 96%, color-mix(in srgb, #8b5cf6 var(--blob), transparent), transparent 70%),
-    radial-gradient(35% 35% at 4% 78%, color-mix(in srgb, #14b8a6 calc(var(--blob) * .7), transparent), transparent 70%);
+    radial-gradient(34% 42% at 88% 16%, rgba(255, 200, 245, .8), transparent 70%),
+    radial-gradient(38% 55% at 100% 74%, rgba(45, 200, 240, .85), transparent 70%),
+    radial-gradient(35% 40% at 78% 102%, rgba(110, 40, 255, .9), transparent 70%),
+    radial-gradient(55% 45% at 64% 28%, rgba(235, 0, 255, .9), transparent 70%),
+    radial-gradient(70% 42% at 18% 66%, rgba(225, 0, 255, .85), transparent 72%),
+    var(--bg);
+}
+body::after {
+  content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: .22; mix-blend-mode: overlay;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 .auth { background: transparent; }
 
@@ -557,7 +560,7 @@ button.primary { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), 0 4px 14px 
 
 /* Quem pede menos transparência no sistema recebe superfícies sólidas */
 @media (prefers-reduced-transparency: reduce) {
-  body::before { display: none; }
+  body::before, body::after { display: none; }
   .card, .panel, .auth-box, .modal-box, .tooltip, .tabbar {
     background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none;
   }
