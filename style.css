@@ -25,6 +25,7 @@
     --muted: #97a1ad;
     --border: #2c343f;
     --accent-default: #6b9cf0;
+    --on-accent: #111111;
     --pos: #4cc27f;
     --neg: #ef6f6f;
     --warn: #e5b04a;
@@ -43,6 +44,7 @@
   --muted: #97a1ad;
   --border: #2c343f;
   --accent-default: #6b9cf0;
+  --on-accent: #111111;
   --pos: #4cc27f;
   --neg: #ef6f6f;
   --warn: #e5b04a;
@@ -505,7 +507,7 @@ body:not(.nav-bottom) .tabbar {
   padding: 4px; gap: 2px; border-radius: 999px;
 }
 body:not(.nav-bottom) .tabbar a { padding: 8px 14px; border-radius: 999px; border-bottom: 0; margin: 0; }
-body:not(.nav-bottom) .tabbar a[aria-current="page"] { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+body:not(.nav-bottom) .tabbar a[aria-current="page"] { background: var(--accent); color: var(--on-accent); }
 
 /* Barra de páginas embaixo: cápsula flutuante, como a do iPhone */
 body.nav-bottom .tabbar {
@@ -515,7 +517,7 @@ body.nav-bottom .tabbar {
 body.nav-bottom .tabbar a { padding: 6px 2px 5px; border-radius: 999px; }
 body.nav-bottom .tabbar svg { padding: 0; }
 body.nav-bottom .tabbar a[aria-current="page"] svg { background: none; }
-body.nav-bottom .tabbar a[aria-current="page"] { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+body.nav-bottom .tabbar a[aria-current="page"] { background: var(--accent); color: var(--on-accent); }
 body.nav-bottom main { padding-bottom: calc(110px + env(safe-area-inset-bottom, 0px)); }
 @media (prefers-reduced-motion: no-preference) {
   .tabbar a { transition: background-color .25s ease, color .25s ease; }
@@ -528,7 +530,7 @@ button, .file-btn { border-radius: 999px; padding-inline: 14px; }
 select, select option { background-color: var(--surface); color: var(--text); }
 button.primary { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), 0 4px 14px color-mix(in srgb, var(--accent) 35%, transparent); }
 .modal-box textarea { background: var(--field); border-radius: 12px; }
-.segmented { border-radius: 999px; background: var(--field); }
+.segmented { border-radius: 20px; background: var(--field); }
 .segmented span { border-radius: 999px; }
 .bar { border-radius: 999px; }
 .bar > div { border-radius: 999px; }

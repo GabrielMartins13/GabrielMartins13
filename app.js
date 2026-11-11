@@ -1220,7 +1220,8 @@ function textOn(hex) {
   const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
     .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
   const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  return lum > 0.4 ? '#111111' : '#ffffff';
+  // 0,179 é onde preto e branco têm o mesmo contraste (WCAG)
+  return lum > 0.179 ? '#111111' : '#ffffff';
 }
 
 function applySettings() {
