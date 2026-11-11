@@ -521,7 +521,7 @@ body.nav-bottom main { padding-bottom: calc(110px + env(safe-area-inset-bottom, 
 input, select, textarea, button, .file-btn { background: var(--field); border-color: var(--border); border-radius: 12px; }
 button, .file-btn { border-radius: 999px; padding-inline: 14px; }
 /* A lista aberta do seletor não aceita fundo translúcido (no Windows fica branca); usa o fundo sólido do tema */
-select option { background: var(--surface); color: var(--text); }
+select, select option { background-color: var(--surface); color: var(--text); }
 button.primary { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), 0 4px 14px color-mix(in srgb, var(--accent) 35%, transparent); }
 .modal-box textarea { background: var(--field); border-radius: 12px; }
 .segmented { border-radius: 999px; background: var(--field); }
