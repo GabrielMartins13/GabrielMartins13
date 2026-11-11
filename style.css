@@ -466,6 +466,7 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
 /* Fundo: ondas de magenta, violeta e ciano sobre preto, com granulado (estilo gradiente "aurora") */
 body::before {
   content: ''; position: fixed; inset: 0; z-index: -2; pointer-events: none;
+  opacity: .55; filter: saturate(.8); /* suaviza as cores sem mudar o desenho */
   background:
     radial-gradient(34% 42% at 88% 16%, rgba(255, 200, 245, .8), transparent 70%),
     radial-gradient(38% 55% at 100% 74%, rgba(45, 200, 240, .85), transparent 70%),
