@@ -425,7 +425,7 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
    brilho na borda, flutuando sobre um fundo colorido suave.
    ============================================================ */
 :root {
-  --bg: #f6f1fb;
+  --bg: #f3effa;
   --border: rgba(28, 36, 48, .1);
   --bar: rgba(28, 36, 48, .08);
   --grid: rgba(28, 36, 48, .08);
@@ -438,7 +438,7 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #050507;
+    --bg: #150a2e;
     --border: rgba(255, 255, 255, .1);
     --bar: rgba(255, 255, 255, .08);
     --grid: rgba(255, 255, 255, .07);
@@ -451,7 +451,7 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
   }
 }
 :root[data-theme="dark"] {
-  --bg: #050507;
+  --bg: #150a2e;
   --border: rgba(255, 255, 255, .1);
   --bar: rgba(255, 255, 255, .08);
   --grid: rgba(255, 255, 255, .07);
@@ -463,16 +463,14 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
   --field: rgba(255, 255, 255, .06);
 }
 
-/* Fundo: ondas de magenta, violeta e ciano sobre preto, com granulado (estilo gradiente "aurora") */
+/* Fundo: faixa violeta em diagonal com brilho rosa no centro, sobre índigo profundo (tons suaves) */
 body::before {
   content: ''; position: fixed; inset: 0; z-index: -2; pointer-events: none;
-  opacity: .55; filter: saturate(.8); /* suaviza as cores sem mudar o desenho */
   background:
-    radial-gradient(34% 42% at 88% 16%, rgba(255, 200, 245, .8), transparent 70%),
-    radial-gradient(38% 55% at 100% 74%, rgba(45, 200, 240, .85), transparent 70%),
-    radial-gradient(35% 40% at 78% 102%, rgba(110, 40, 255, .9), transparent 70%),
-    radial-gradient(55% 45% at 64% 28%, rgba(235, 0, 255, .9), transparent 70%),
-    radial-gradient(70% 42% at 18% 66%, rgba(225, 0, 255, .85), transparent 72%),
+    radial-gradient(16% 20% at 58% 56%, rgba(255, 30, 140, .5), transparent 70%),
+    radial-gradient(30% 28% at 55% 58%, rgba(200, 50, 160, .28), transparent 72%),
+    linear-gradient(35deg, transparent 28%, rgba(100, 70, 170, .58) 44%, rgba(100, 70, 170, .5) 60%, transparent 78%),
+    radial-gradient(45% 35% at 75% 85%, rgba(96, 66, 160, .3), transparent 70%),
     var(--bg);
 }
 body::after {
