@@ -4,7 +4,7 @@ Aplicativo web de controle financeiro pessoal: receitas, despesas, orçamentos e
 
 ## Como usar
 
-Acesse em https://fyna-5p4.pages.dev (endereço antigo, ainda no ar: https://gabrielmartins13.github.io/GabrielMartins13/).
+Acesse em https://fyna-5p4.pages.dev. O endereço antigo do GitHub Pages redireciona sozinho para o novo.
 
 Ou abra o arquivo `index.html` direto no navegador.
 
