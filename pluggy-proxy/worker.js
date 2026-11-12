@@ -5,7 +5,8 @@
 // que vão direto para a Pluggy. Só aceita chamadas vindas do endereço do FYNA e
 // só repassa as rotas de leitura que o app usa.
 
-const ALLOWED_ORIGINS = ['https://gabrielmartins13.github.io'];
+// O primeiro é o endereço principal; o do GitHub fica enquanto o antigo ainda estiver no ar
+const ALLOWED_ORIGINS = ['https://fyna.pages.dev', 'https://gabrielmartins13.github.io'];
 
 const ALLOWED_ROUTES = [
   ['POST', /^\/auth$/],

@@ -4,7 +4,7 @@ Aplicativo web de controle financeiro pessoal: receitas, despesas, orçamentos e
 
 ## Como usar
 
-Acesse pelo GitHub Pages: https://gabrielmartins13.github.io/GabrielMartins13/
+Acesse em https://fyna.pages.dev (endereço antigo, ainda no ar: https://gabrielmartins13.github.io/GabrielMartins13/).
 
 Ou abra o arquivo `index.html` direto no navegador.
 
@@ -12,11 +12,20 @@ No iPhone, abra o link no Safari e use Compartilhar → Adicionar à Tela de In�
 
 Para levar os dados entre aparelhos ou versões, use Personalizar → Copiar dados e, no outro lugar, Colar dados.
 
+## Publicação (Cloudflare Pages, grátis)
+
+1. Em https://dash.cloudflare.com → **Workers e Pages → Criar → Pages → Conectar ao Git**, escolha este repositório.
+2. Nome do projeto: `fyna` (vira `fyna.pages.dev`; se o nome estiver em uso, o Cloudflare sugere outro e é preciso trocar o endereço em `pluggy-proxy/worker.js`).
+3. Branch de produção: `claude/financial-control-app-995tkg`. Predefinição: **Nenhuma**; comando de build vazio; diretório de saída `/`.
+4. No Firebase, **Authentication → Configurações → Domínios autorizados**: adicione `fyna.pages.dev`, senão o login não funciona no endereço novo.
+
+Cada envio para a branch de produção publica sozinho. Os dados da conta continuam na nuvem; aparência e desbloqueio com Face ID ficam por endereço, então precisam ser escolhidos de novo no endereço novo.
+
 ## Login na nuvem (Firebase)
 
 1. Crie um projeto em https://console.firebase.google.com (o Google Analytics pode ficar desativado).
 2. **Authentication → Método de login**: ative **E-mail/senha**.
-3. **Authentication → Configurações → Domínios autorizados**: adicione `gabrielmartins13.github.io`.
+3. **Authentication → Configurações → Domínios autorizados**: adicione `fyna.pages.dev` (e `gabrielmartins13.github.io`, enquanto o endereço antigo estiver em uso).
 4. **Firestore Database → Criar banco de dados** (modo de produção, região `southamerica-east1`). Na aba **Regras**, cole o conteúdo de `firestore.rules` e publique.
 5. **Configurações do projeto → Seus apps → Web (`</>`)**: registre o app e copie o `firebaseConfig` para `firebase-config.js`.
 
